@@ -16,25 +16,28 @@ import {
   Type,
   X
 } from 'lucide-vue-next'
-import type { SelectedObject } from '../App.vue'
 import {
   airportInstances,
   flightInstances,
   getObjectTypeById,
   linkTypes,
   type LinkType,
+  type ObjectInstance,
   type PropertyValue,
   type PropertyType
 } from '../mock/mock'
+import type { SearchAroundAddPayload, SelectedObject } from '../types/graph'
 
 const props = defineProps<{
   selectedObject: SelectedObject
+  startingInstance: ObjectInstance
   startingObjectTypeId: string
   initialLinkType?: LinkType | null
 }>()
 
 const emit = defineEmits<{
   (event: 'close'): void
+  (event: 'addToGraph', payload: SearchAroundAddPayload): void
 }>()
 
 const propertyFilter = ref('')
@@ -66,11 +69,11 @@ const resultObjectType = computed(() => {
 const filterProperties = computed(() => resultObjectType.value?.properties.filter((property) => property.filterable) ?? [])
 
 const selectedAirportCode = computed(() => {
-  return props.selectedObject.properties.find((property) => property.key === 'Airport')?.value ?? ''
+  return toDisplayString(props.startingInstance.properties.airport)
 })
 
 const selectedFlightId = computed(() => {
-  return props.selectedObject.properties.find((property) => property.key === 'Flight ID')?.value ?? ''
+  return toDisplayString(props.startingInstance.properties.flightId)
 })
 
 const resultInstances = computed(() => {
@@ -215,7 +218,18 @@ function addLink() {
 }
 
 function addToGraph() {
-  console.log('add to graph')
+  if (!selectedLinkType.value) {
+    console.log('add to graph skipped: no link selected')
+    return
+  }
+
+  const payload: SearchAroundAddPayload = {
+    linkType: selectedLinkType.value,
+    objectIds: resultInstances.value.map((instance) => instance.id)
+  }
+
+  emit('addToGraph', payload)
+  console.log('add to graph', payload)
 }
 
 function toggleResultPreview() {
@@ -382,7 +396,7 @@ watch(
           <CirclePlus :size="18" />
           <span>Add link</span>
         </button>
-        <button type="button" @click="addToGraph">
+        <button type="button" :disabled="!selectedLinkType" @click="addToGraph">
           <Network :size="18" />
           <span>Add to graph</span>
         </button>

@@ -707,6 +707,13 @@ button {
   font-size: 12px;
 }
 
+.add-object-preview__empty {
+  padding: 16px 10px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
 .add-object-filter {
   margin-top: 12px;
   padding: 12px;
@@ -1689,6 +1696,15 @@ button {
 
 .search-around-actions button:hover {
   background: #f8fafc;
+}
+
+.search-around-actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.search-around-actions button:disabled:hover {
+  background: #ffffff;
 }
 
 .graph-node {

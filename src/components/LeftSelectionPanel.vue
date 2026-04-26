@@ -13,13 +13,13 @@ import {
   SquarePen
 } from 'lucide-vue-next'
 import { ref } from 'vue'
-import type { SelectedObject } from '../App.vue'
 import type { ObjectInstance, ObjectType } from '../mock/mock'
+import type { AddObjectPayload, SelectedObject } from '../types/graph'
 import AddObjectDrawer from './AddObjectDrawer.vue'
 import PropertyList from './PropertyList.vue'
 
 defineProps<{
-  selectedObject: SelectedObject
+  selectedObject: SelectedObject | null
   graphStats: {
     objects: number
     nodes: number
@@ -39,6 +39,7 @@ defineProps<{
 
 const emit = defineEmits<{
   (event: 'dockTool', payload: { tab: string; clientX: number; clientY: number }): void
+  (event: 'addToCanvas', payload: AddObjectPayload): void
 }>()
 
 const filterText = ref('')
@@ -136,8 +137,10 @@ function openAddObjectDrawer() {
   isAddObjectDrawerOpen.value = true
 }
 
-function handleAddToCanvas(payload: { objectTypeId: string; objectIds: string[]; filter: unknown }) {
+function handleAddToCanvas(payload: AddObjectPayload) {
   selectedLayerObjectTypeId.value = payload.objectTypeId
+  isAddObjectDrawerOpen.value = false
+  emit('addToCanvas', payload)
   console.log('add object drawer payload', payload)
 }
 </script>
@@ -254,42 +257,49 @@ function handleAddToCanvas(payload: { objectTypeId: string; objectIds: string[];
       </template>
 
       <template v-else-if="activePrimaryTab === 'Selection'">
-        <div class="selection-panel__object">
-          <div class="object-icon">
-            <MapPin :size="24" />
+        <template v-if="selectedObject">
+          <div class="selection-panel__object">
+            <div class="object-icon">
+              <MapPin :size="24" />
+            </div>
+            <div class="object-copy">
+              <div class="object-copy__title">{{ selectedObject.title }}</div>
+              <div class="object-copy__subtitle">{{ selectedObject.subtitle }}</div>
+            </div>
+            <div class="object-actions">
+              <button aria-label="Settings" @click="console.log('settings')">
+                <Settings :size="15" />
+              </button>
+              <button aria-label="Open object" @click="console.log('open object')">
+                <ExternalLink :size="15" />
+              </button>
+            </div>
           </div>
-          <div class="object-copy">
-            <div class="object-copy__title">{{ selectedObject.title }}</div>
-            <div class="object-copy__subtitle">{{ selectedObject.subtitle }}</div>
-          </div>
-          <div class="object-actions">
-            <button aria-label="Settings" @click="console.log('settings')">
-              <Settings :size="15" />
-            </button>
-            <button aria-label="Open object" @click="console.log('open object')">
-              <ExternalLink :size="15" />
-            </button>
-          </div>
-        </div>
 
-        <div class="selection-panel__subtabs">
-          <button class="subtab subtab--active">Properties</button>
-          <button class="subtab">Series</button>
-          <button class="subtab">
-            Events
-            <span class="subtab__badge">0</span>
+          <div class="selection-panel__subtabs">
+            <button class="subtab subtab--active">Properties</button>
+            <button class="subtab">Series</button>
+            <button class="subtab">
+              Events
+              <span class="subtab__badge">0</span>
+            </button>
+          </div>
+
+          <div class="selection-panel__filter">
+            <input v-model="filterText" type="text" placeholder="Filter..." />
+          </div>
+
+          <PropertyList :items="selectedObject.properties" />
+
+          <button class="selection-panel__add" aria-label="Add property" @click="console.log('add property')">
+            <Plus :size="16" />
           </button>
+        </template>
+
+        <div v-else class="selection-panel__empty">
+          <div class="selection-panel__empty-title">No object selected</div>
+          <div class="selection-panel__empty-copy">Select a node on the canvas to inspect its properties.</div>
         </div>
-
-        <div class="selection-panel__filter">
-          <input v-model="filterText" type="text" placeholder="Filter..." />
-        </div>
-
-        <PropertyList :items="selectedObject.properties" />
-
-        <button class="selection-panel__add" aria-label="Add property" @click="console.log('add property')">
-          <Plus :size="16" />
-        </button>
       </template>
 
       <div v-else class="selection-panel__empty">

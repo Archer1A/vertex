@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test:graph-grouping": "node scripts/graphGrouping.test.mjs",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview"
   },

@@ -11,6 +11,7 @@ import {
   Trash2,
   Undo2
 } from 'lucide-vue-next'
+import { computed } from 'vue'
 
 interface ToolbarButton {
   label: string
@@ -19,14 +20,18 @@ interface ToolbarButton {
   dropdown?: boolean
 }
 
-const firstGroup: ToolbarButton[] = [
+const props = defineProps<{
+  canGroup?: boolean
+}>()
+
+const firstGroup = computed<ToolbarButton[]>(() => [
   { label: 'Selection', icon: MousePointer2, dropdown: true },
   { label: 'Search Around', icon: Search, dropdown: true },
-  { label: 'Group', icon: Group, dropdown: true, disabled: true },
+  { label: 'Group', icon: Group, dropdown: true, disabled: !props.canGroup },
   { label: 'Layout', icon: LayoutGrid, dropdown: true },
   { label: 'Annotate', icon: Pencil, dropdown: true },
   { label: 'Delete', icon: Trash2 }
-]
+])
 
 const historyGroup: ToolbarButton[] = [
   { label: 'Undo', icon: Undo2 },

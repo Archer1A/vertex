@@ -1,17 +1,15 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
-import type { SelectedObject } from '../App.vue'
+import type { AddObjectPayload, GraphEdgeData, GraphNodeData, SearchAroundAddPayload, SelectedObject } from '../types/graph'
+import { groupNodesByIds } from '../utils/graphGrouping'
 import {
-  airportInstances,
   flightInstances,
-  flightDestinationAirportLinkType,
-  flightOriginAirportLinkType,
   getObjectTypeById,
   linkTypes,
   objectInstances,
   objectTypes,
-  type ObjectInstance,
   type LinkType,
+  type ObjectInstance,
   type PropertyValue
 } from '../mock/mock'
 import FloatingControls from './FloatingControls.vue'
@@ -21,54 +19,37 @@ import MainToolbar from './MainToolbar.vue'
 import RightVerticalPanel from './RightVerticalPanel.vue'
 import SearchAroundPanel from './SearchAroundPanel.vue'
 
-interface GraphNodeData {
-  id: string
-  label: string
-  type: 'airport' | 'flight'
-  objectTypeId: string
-  instance: ObjectInstance
-  x: number
-  y: number
-}
-
-interface GraphEdgeData {
-  id: string
-  source: string
-  target: string
-  label: string
-  linkTypeId: string
-}
-
-const props = defineProps<{
-  selectedObject: SelectedObject
+defineProps<{
   activeSheetIndex: number
 }>()
 
 const canvasRef = ref<HTMLElement | null>(null)
-const selectedNodeId = ref('airport_sfo')
+const selectedNodeId = ref('')
+const selectedNodeIds = ref<string[]>([])
 const isSearchAroundOpen = ref(false)
-const searchAroundStartNodeId = ref('airport_sfo')
+const searchAroundStartNodeId = ref('')
 const searchAroundLinkType = ref<LinkType | null>(null)
 const nodeTool = reactive({ open: false, nodeId: '', x: 0, y: 0 })
 const objectTypeChooser = reactive({ open: false, nodeId: '', x: 0, y: 0 })
+
+const graphNodes = reactive<GraphNodeData[]>([])
+const graphEdges = reactive<GraphEdgeData[]>([])
+
 const airportPositions: Record<string, { x: number; y: number }> = {
-  SFO: { x: 46, y: 50 },
-  LAX: { x: 63, y: 70 },
-  SEA: { x: 64, y: 28 },
-  JFK: { x: 84, y: 48 }
+  SFO: { x: 56, y: 58 },
+  LAX: { x: 46, y: 62 },
+  SEA: { x: 52, y: 38 },
+  JFK: { x: 70, y: 48 }
 }
 
 const flightPositions: Record<string, { x: number; y: number }> = {
-  'UA1175-2026-04-25': { x: 55, y: 60 },
-  'UA2381-2026-04-25': { x: 55, y: 38 },
-  'DL421-2026-04-25': { x: 74, y: 62 },
-  'AS330-2026-04-25': { x: 55, y: 30 },
-  'B6401-2026-04-25': { x: 75, y: 55 },
-  'AA1846-2026-04-25': { x: 55, y: 72 }
+  'UA1175-2026-04-25': { x: 58, y: 44 },
+  'UA2381-2026-04-25': { x: 62, y: 38 },
+  'DL421-2026-04-25': { x: 64, y: 58 },
+  'AS330-2026-04-25': { x: 50, y: 50 },
+  'B6401-2026-04-25': { x: 74, y: 54 },
+  'AA1846-2026-04-25': { x: 52, y: 66 }
 }
-
-const graphNodes = reactive<GraphNodeData[]>(createGraphNodes())
-const graphEdges = computed<GraphEdgeData[]>(createGraphEdges)
 
 const panelPosition = reactive({ x: 8, y: 8 })
 const dragState = reactive({
@@ -88,19 +69,36 @@ const panelStyle = computed(() => ({
 const graphStats = computed(() => ({
   objects: objectTypes.length,
   nodes: graphNodes.length,
-  edges: graphEdges.value.length
+  edges: graphEdges.length
 }))
 
-const searchAroundStartNode = computed(() => {
-  return graphNodes.find((node) => node.id === searchAroundStartNodeId.value) ?? graphNodes[0]
+const selectedGraphNode = computed(() => {
+  return graphNodes.find((node) => node.id === selectedNodeId.value) ?? null
 })
 
-const searchAroundSelectedObject = computed(() => {
-  if (!searchAroundStartNode.value) {
-    return props.selectedObject
+const selectedGraphNodes = computed(() => {
+  const selectedIds = new Set(selectedNodeIds.value)
+  return graphNodes.filter((node) => selectedIds.has(node.id))
+})
+
+const canGroupSelectedNodes = computed(() => {
+  if (selectedGraphNodes.value.length < 2) {
+    return false
   }
 
-  return toSelectedObject(searchAroundStartNode.value)
+  return new Set(selectedGraphNodes.value.map((node) => node.objectTypeId)).size === 1
+})
+
+const selectedObjectForPanel = computed<SelectedObject | null>(() => {
+  return selectedGraphNode.value ? toSelectedObject(selectedGraphNode.value) : null
+})
+
+const searchAroundStartNode = computed(() => {
+  return graphNodes.find((node) => node.id === searchAroundStartNodeId.value) ?? null
+})
+
+const searchAroundSelectedObject = computed<SelectedObject | null>(() => {
+  return searchAroundStartNode.value ? toSelectedObject(searchAroundStartNode.value) : null
 })
 
 const associatedObjectTypeOptions = computed(() => {
@@ -156,7 +154,7 @@ const nodeGroups = computed(() =>
 )
 
 const edgeLines = computed(() =>
-  graphEdges.value
+  graphEdges
     .map((edge) => {
       const source = graphNodes.find((node) => node.id === edge.source)
       const target = graphNodes.find((node) => node.id === edge.target)
@@ -205,11 +203,66 @@ function getInstanceLabel(instance: ObjectInstance) {
   const titleProperty = objectType?.properties.find((property) => property.id === objectType.titlePropertyId)
   const title = titleProperty ? toDisplayString(instance.properties[titleProperty.apiName]) : ''
 
-  if (title) {
-    return title.length > 28 ? `${title.slice(0, 25)}...` : title
+  return title || instance.id
+}
+
+function getObjectTypeName(objectTypeId: string) {
+  return getObjectTypeById(objectTypeId)?.displayName ?? objectTypeId
+}
+
+function clampPercent(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value))
+}
+
+function getDefaultNodePosition(instance: ObjectInstance, index: number) {
+  const airportCode = toDisplayString(instance.properties.airport)
+  const flightId = toDisplayString(instance.properties.flightId)
+  const fallbackPosition = {
+    x: 48 + (index % 4) * 8,
+    y: 42 + Math.floor(index / 4) * 10
   }
 
-  return instance.id
+  if (instance.objectTypeId === 'object_type_airport') {
+    return airportPositions[airportCode] ?? fallbackPosition
+  }
+
+  return flightPositions[flightId] ?? fallbackPosition
+}
+
+function getAnchoredNodePosition(anchor: GraphNodeData, index: number, total: number) {
+  const angle = total <= 1 ? 0 : (Math.PI * 2 * index) / total
+  const radius = 16
+
+  return {
+    x: clampPercent(anchor.x + Math.cos(angle) * radius, 8, 92),
+    y: clampPercent(anchor.y + Math.sin(angle) * radius, 10, 90)
+  }
+}
+
+function createGraphNode(instance: ObjectInstance, index: number, anchor?: GraphNodeData, total = 1): GraphNodeData {
+  const position = anchor ? getAnchoredNodePosition(anchor, index, total) : getDefaultNodePosition(instance, graphNodes.length + index)
+
+  return {
+    id: instance.id,
+    label: getInstanceLabel(instance),
+    type: instance.objectTypeId === 'object_type_airport' ? 'airport' : 'flight',
+    objectTypeId: instance.objectTypeId,
+    instance,
+    x: position.x,
+    y: position.y
+  }
+}
+
+function addNodeIfMissing(instance: ObjectInstance, index: number, anchor?: GraphNodeData, total = 1) {
+  const existingNode = graphNodes.find((node) => node.id === instance.id)
+
+  if (existingNode) {
+    return existingNode
+  }
+
+  const node = createGraphNode(instance, index, anchor, total)
+  graphNodes.push(node)
+  return node
 }
 
 function toSelectedObject(node: GraphNodeData): SelectedObject {
@@ -242,66 +295,82 @@ function countLinkedObjects(node: GraphNodeData, linkType: LinkType) {
   return 1
 }
 
-function createGraphNodes(): GraphNodeData[] {
-  return objectInstances.map((instance, index) => {
-    const airportCode = toDisplayString(instance.properties.airport)
-    const flightId = toDisplayString(instance.properties.flightId)
-    const fallbackPosition = { x: 50 + (index % 5) * 8, y: 30 + Math.floor(index / 5) * 12 }
-    const position =
-      instance.objectTypeId === 'object_type_airport'
-        ? airportPositions[airportCode] ?? fallbackPosition
-        : flightPositions[flightId] ?? fallbackPosition
+function findAirportByCode(code: PropertyValue) {
+  const airportCode = toDisplayString(code)
 
-    return {
-      id: instance.id,
-      label: getInstanceLabel(instance),
-      type: instance.objectTypeId === 'object_type_airport' ? 'airport' : 'flight',
-      objectTypeId: instance.objectTypeId,
-      instance,
-      x: position.x,
-      y: position.y
-    }
+  return objectInstances.find((instance) => {
+    return instance.objectTypeId === 'object_type_airport' && toDisplayString(instance.properties.airport) === airportCode
   })
 }
 
-function findAirportByCode(airportCode: PropertyValue) {
-  const code = toDisplayString(airportCode)
-  return airportInstances.find((airport) => toDisplayString(airport.properties.airport) === code)
+function getRelatedInstances(startNode: GraphNodeData, linkType: LinkType) {
+  if (startNode.objectTypeId === 'object_type_airport') {
+    const airportCode = toDisplayString(startNode.instance.properties.airport)
+
+    if (linkType.apiName === 'flightDestinationAirport') {
+      return flightInstances.filter((flight) => toDisplayString(flight.properties.destinationAirportCode) === airportCode)
+    }
+
+    return flightInstances.filter((flight) => toDisplayString(flight.properties.originAirportCode) === airportCode)
+  }
+
+  const airportCode =
+    linkType.apiName === 'flightDestinationAirport'
+      ? startNode.instance.properties.destinationAirportCode
+      : startNode.instance.properties.originAirportCode
+  const airport = findAirportByCode(airportCode)
+
+  return airport ? [airport] : []
 }
 
-function createGraphEdges(): GraphEdgeData[] {
-  return flightInstances.flatMap((flight) => {
-    const originAirport = findAirportByCode(flight.properties.originAirportCode)
-    const destinationAirport = findAirportByCode(flight.properties.destinationAirportCode)
-    const flightNumber = toDisplayString(flight.properties.flightNumber)
-    const edges: GraphEdgeData[] = []
+function createRelationshipEdge(startNode: GraphNodeData, resultNode: GraphNodeData, linkType: LinkType): GraphEdgeData | null {
+  const source = startNode.objectTypeId === linkType.sourceObjectTypeId ? startNode.id : resultNode.id
+  const target = startNode.objectTypeId === linkType.targetObjectTypeId ? startNode.id : resultNode.id
 
-    if (originAirport) {
-      edges.push({
-        id: `${flight.id}-${flightOriginAirportLinkType.id}`,
-        source: flight.id,
-        target: originAirport.id,
-        label: 'origin',
-        linkTypeId: flightOriginAirportLinkType.id
-      })
-    }
+  if (source === target) {
+    return null
+  }
 
-    if (destinationAirport) {
-      edges.push({
-        id: `${flight.id}-${flightDestinationAirportLinkType.id}`,
-        source: flight.id,
-        target: destinationAirport.id,
-        label: flightNumber ? `${flightNumber} destination` : 'destination',
-        linkTypeId: flightDestinationAirportLinkType.id
-      })
-    }
+  return {
+    id: `${source}-${linkType.id}-${target}`,
+    source,
+    target,
+    label: linkType.apiName === 'flightDestinationAirport' ? 'destination' : 'origin',
+    linkTypeId: linkType.id
+  }
+}
 
-    return edges
-  })
+function addEdgeIfMissing(edge: GraphEdgeData | null) {
+  if (!edge) {
+    return
+  }
+
+  if (graphEdges.some((existingEdge) => existingEdge.id === edge.id)) {
+    return
+  }
+
+  graphEdges.push(edge)
+}
+
+function syncEdgesForNode(node: GraphNodeData) {
+  linkTypes
+    .filter((linkType) => {
+      return linkType.sourceObjectTypeId === node.objectTypeId || linkType.targetObjectTypeId === node.objectTypeId
+    })
+    .forEach((linkType) => {
+      const relatedInstanceIds = new Set(getRelatedInstances(node, linkType).map((instance) => instance.id))
+
+      graphNodes
+        .filter((candidate) => candidate.id !== node.id && relatedInstanceIds.has(candidate.id))
+        .forEach((candidate) => {
+          addEdgeIfMissing(createRelationshipEdge(node, candidate, linkType))
+        })
+    })
 }
 
 function handleCanvasClick() {
   selectedNodeId.value = ''
+  selectedNodeIds.value = []
   nodeTool.open = false
   objectTypeChooser.open = false
   console.log('canvas clicked')
@@ -312,11 +381,44 @@ function handlePanelClick(event: MouseEvent) {
 }
 
 function handleToolAction(label: string) {
-  if (label === 'Search Around') {
-    searchAroundStartNodeId.value = selectedNodeId.value || 'airport_sfo'
-    searchAroundLinkType.value = null
-    isSearchAroundOpen.value = true
+  if (label === 'Group') {
+    groupSelectedNodes()
+    return
   }
+
+  if (label !== 'Search Around') {
+    console.log('tool action', label)
+    return
+  }
+
+  if (!selectedGraphNode.value) {
+    isSearchAroundOpen.value = false
+    console.log('search around requires selected node')
+    return
+  }
+
+  searchAroundStartNodeId.value = selectedGraphNode.value.id
+  searchAroundLinkType.value = null
+  isSearchAroundOpen.value = true
+}
+
+function groupSelectedNodes() {
+  if (!canGroupSelectedNodes.value) {
+    console.log('group requires multiple selected nodes with the same object type')
+    return
+  }
+
+  const result = groupNodesByIds(graphNodes, graphEdges, selectedNodeIds.value, getObjectTypeName)
+
+  graphNodes.splice(0, graphNodes.length, ...result.nodes)
+  graphEdges.splice(0, graphEdges.length, ...result.edges)
+
+  selectedNodeId.value = result.groupedNodeId ?? ''
+  selectedNodeIds.value = result.groupedNodeId ? [result.groupedNodeId] : []
+  nodeTool.open = false
+  objectTypeChooser.open = false
+
+  console.log('group nodes', selectedNodeIds.value)
 }
 
 function getCanvasPoint(clientX: number, clientY: number) {
@@ -340,6 +442,7 @@ function handleNodeContextMenu(event: MouseEvent, nodeId: string) {
 
   const point = getCanvasPoint(event.clientX, event.clientY)
   selectedNodeId.value = nodeId
+  selectedNodeIds.value = [nodeId]
   nodeTool.open = true
   nodeTool.nodeId = nodeId
   nodeTool.x = point.x
@@ -347,6 +450,25 @@ function handleNodeContextMenu(event: MouseEvent, nodeId: string) {
   objectTypeChooser.open = false
 
   console.log('node context menu', nodeId)
+}
+
+function selectNode(nodeId: string, additive: boolean) {
+  if (!additive) {
+    selectedNodeId.value = nodeId
+    selectedNodeIds.value = [nodeId]
+    return
+  }
+
+  const alreadySelected = selectedNodeIds.value.includes(nodeId)
+
+  if (alreadySelected) {
+    selectedNodeIds.value = selectedNodeIds.value.filter((selectedId) => selectedId !== nodeId)
+    selectedNodeId.value = selectedNodeIds.value.at(-1) ?? ''
+    return
+  }
+
+  selectedNodeIds.value = [...selectedNodeIds.value, nodeId]
+  selectedNodeId.value = nodeId
 }
 
 function openAssociatedObjectTypes() {
@@ -383,6 +505,91 @@ function handleDockTool(payload: { tab: string; clientX: number; clientY: number
   panelPosition.y = Math.min(Math.max(8, rect.height - panelHeight - 8), Math.max(8, nextY))
 
   console.log('dock tool', payload.tab, panelPosition)
+}
+
+function handleAddObjectsToCanvas(payload: AddObjectPayload) {
+  const instancesToAdd = payload.objectIds
+    .map((objectId) => objectInstances.find((instance) => instance.id === objectId))
+    .filter((instance): instance is ObjectInstance => {
+      return instance !== undefined && instance.objectTypeId === payload.objectTypeId
+    })
+
+  let firstAddedNode: GraphNodeData | null = null
+  let firstResolvedNode: GraphNodeData | null = null
+
+  for (let index = 0; index < instancesToAdd.length; index += 1) {
+    const instance = instancesToAdd[index]
+    const existingNode = graphNodes.find((node) => node.id === instance.id)
+    const node = addNodeIfMissing(instance, index)
+
+    firstResolvedNode ??= node
+
+    if (!existingNode) {
+      firstAddedNode ??= node
+    }
+  }
+
+  instancesToAdd.forEach((instance) => {
+    const node = graphNodes.find((item) => item.id === instance.id)
+
+    if (node) {
+      syncEdgesForNode(node)
+    }
+  })
+
+  const nodeToSelect = firstAddedNode ?? firstResolvedNode
+
+  if (nodeToSelect) {
+    selectedNodeId.value = nodeToSelect.id
+    selectedNodeIds.value = [nodeToSelect.id]
+  }
+
+  console.log('add objects to canvas', payload)
+}
+
+function handleAddSearchAroundToGraph(payload: SearchAroundAddPayload) {
+  const startNode = searchAroundStartNode.value
+
+  if (!startNode) {
+    console.log('search around add skipped: no start node')
+    return
+  }
+
+  const isStartNodeConnectedToLink =
+    payload.linkType.sourceObjectTypeId === startNode.objectTypeId ||
+    payload.linkType.targetObjectTypeId === startNode.objectTypeId
+
+  if (!isStartNodeConnectedToLink) {
+    console.log('search around add skipped: link type does not match start node', payload.linkType.apiName)
+    return
+  }
+
+  const relatedInstanceIds = new Set(getRelatedInstances(startNode, payload.linkType).map((instance) => instance.id))
+  const resultObjectTypeId =
+    payload.linkType.sourceObjectTypeId === startNode.objectTypeId
+      ? payload.linkType.targetObjectTypeId
+      : payload.linkType.sourceObjectTypeId
+  const resultInstances = payload.objectIds
+    .map((objectId) => objectInstances.find((instance) => instance.id === objectId))
+    .filter((instance): instance is ObjectInstance => {
+      return (
+        instance !== undefined &&
+        instance.objectTypeId === resultObjectTypeId &&
+        relatedInstanceIds.has(instance.id)
+      )
+    })
+
+  resultInstances.forEach((instance, index) => {
+    const resultNode = addNodeIfMissing(instance, index, startNode, resultInstances.length)
+    addEdgeIfMissing(createRelationshipEdge(startNode, resultNode, payload.linkType))
+  })
+
+  if (resultInstances.length > 0) {
+    selectedNodeId.value = startNode.id
+    selectedNodeIds.value = [startNode.id]
+  }
+
+  console.log('add search around to graph', payload)
 }
 
 function getDraggingNode() {
@@ -454,7 +661,7 @@ function handleNodePointerUp(event: PointerEvent) {
   dragState.dragging = false
 
   if (!dragState.moved) {
-    selectedNodeId.value = dragState.nodeId
+    selectNode(dragState.nodeId, event.shiftKey || event.metaKey || event.ctrlKey)
     console.log('selected node', dragState.nodeId)
   }
 
@@ -477,7 +684,7 @@ onBeforeUnmount(() => {
   <main ref="canvasRef" class="graph-canvas" @click="handleCanvasClick">
     <div class="graph-canvas__grid" aria-hidden="true"></div>
     <LeftSelectionPanel
-      :selected-object="selectedObject"
+      :selected-object="selectedObjectForPanel"
       :graph-stats="graphStats"
       :object-types="objectTypes"
       :object-instances="objectInstances"
@@ -485,14 +692,22 @@ onBeforeUnmount(() => {
       :style="panelStyle"
       class="graph-canvas__left-panel"
       @dock-tool="handleDockTool"
+      @add-to-canvas="handleAddObjectsToCanvas"
       @click="handlePanelClick"
     />
-    <MainToolbar class="graph-canvas__toolbar" @tool-action="handleToolAction" @click="handlePanelClick" />
+    <MainToolbar
+      class="graph-canvas__toolbar"
+      :can-group="canGroupSelectedNodes"
+      @tool-action="handleToolAction"
+      @click="handlePanelClick"
+    />
     <SearchAroundPanel
-      v-if="isSearchAroundOpen"
+      v-if="isSearchAroundOpen && searchAroundStartNode && searchAroundSelectedObject"
       :selected-object="searchAroundSelectedObject"
-      :starting-object-type-id="searchAroundStartNode?.objectTypeId ?? 'object_type_airport'"
+      :starting-instance="searchAroundStartNode.instance"
+      :starting-object-type-id="searchAroundStartNode.objectTypeId"
       :initial-link-type="searchAroundLinkType"
+      @add-to-graph="handleAddSearchAroundToGraph"
       @close="isSearchAroundOpen = false"
       @click="handlePanelClick"
     />
@@ -533,7 +748,7 @@ onBeforeUnmount(() => {
       :label="node.label"
       :node-type="node.type"
       :style="{ left: `${node.x}%`, top: `${node.y}%` }"
-      :is-selected="selectedNodeId === node.id"
+      :is-selected="selectedNodeIds.includes(node.id)"
       :is-dragging="dragState.dragging && dragState.nodeId === node.id"
       @pointerdown="handleNodePointerDown($event, node.id)"
       @pointermove="handleNodePointerMove"

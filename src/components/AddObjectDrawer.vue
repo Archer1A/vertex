@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { Filter, MapPin, Route, X } from 'lucide-vue-next'
 import type { ObjectInstance, ObjectType, PropertyType, PropertyValue } from '../mock/mock'
+import type { AddObjectPayload, EqualsFilterPayload } from '../types/graph'
 
 const props = defineProps<{
   objectTypes: ObjectType[]
@@ -10,29 +11,15 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (event: 'close'): void
-  (
-    event: 'addToCanvas',
-    payload: {
-      objectTypeId: string
-      objectIds: string[]
-      filter: FilterPayload | null
-    }
-  ): void
+  (event: 'addToCanvas', payload: AddObjectPayload): void
 }>()
-
-type FilterPayload = {
-  objectTypeId: string
-  propertyApiName: string
-  operator: string
-  value: string
-}
 
 const selectedObjectTypeId = ref(props.objectTypes[0]?.id ?? '')
 const filterOpen = ref(false)
 const filterPropertyApiName = ref('')
-const filterOperator = ref('contains')
+const filterOperator = ref<'equals'>('equals')
 const filterValue = ref('')
-const appliedFilter = ref<FilterPayload | null>(null)
+const appliedFilter = ref<EqualsFilterPayload | null>(null)
 
 const selectedObjectType = computed(() =>
   props.objectTypes.find((objectType) => objectType.id === selectedObjectTypeId.value)
@@ -78,27 +65,7 @@ const previewCountText = computed(() => {
   return `${filteredInstances.value.length} of ${objectTypeInstances.value.length} objects`
 })
 
-const operators = computed(() => {
-  const property = selectedFilterProperty.value
-
-  if (!property) {
-    return []
-  }
-
-  if (property.baseType === 'number') {
-    return ['equals', 'greater than', 'less than']
-  }
-
-  if (property.baseType === 'boolean') {
-    return ['is']
-  }
-
-  if (property.baseType === 'date' || property.baseType === 'datetime') {
-    return ['equals', 'before', 'after']
-  }
-
-  return ['contains', 'equals', 'starts with', 'is empty']
-})
+const operators = computed(() => (selectedFilterProperty.value ? ['equals'] : []))
 
 watch(
   selectedObjectTypeId,
@@ -107,13 +74,13 @@ watch(
     filterValue.value = ''
     const firstFilterableProperty = filterableProperties.value[0]
     filterPropertyApiName.value = firstFilterableProperty?.apiName ?? ''
-    filterOperator.value = operators.value[0] ?? 'contains'
+    filterOperator.value = 'equals'
   },
   { immediate: true }
 )
 
 watch(filterPropertyApiName, () => {
-  filterOperator.value = operators.value[0] ?? 'contains'
+  filterOperator.value = 'equals'
   filterValue.value = ''
   appliedFilter.value = null
 })
@@ -155,81 +122,51 @@ function getInstanceTitle(instance: ObjectInstance) {
   }
 }
 
-function matchesFilter(value: PropertyValue, property: PropertyType, filter: FilterPayload | null) {
+function matchesFilter(value: PropertyValue, property: PropertyType, filter: EqualsFilterPayload | null) {
   if (!filter) {
     return true
   }
 
-  const rawValue = toDisplayString(value)
-  const comparableValue = rawValue.toLowerCase()
-  const comparableFilter = filter.value.toLowerCase()
-
-  if (filter.operator === 'is empty') {
-    return rawValue.trim().length === 0
-  }
+  const rawValue = toDisplayString(value).trim()
+  const rawFilter = filter.value.trim()
 
   if (property.baseType === 'number') {
-    const numericValue = Number(rawValue)
-    const numericFilter = Number(filter.value)
-
-    if (Number.isNaN(numericValue) || Number.isNaN(numericFilter)) {
+    if (rawValue === '' || rawFilter === '') {
       return false
     }
 
-    if (filter.operator === 'greater than') {
-      return numericValue > numericFilter
-    }
-
-    if (filter.operator === 'less than') {
-      return numericValue < numericFilter
-    }
-
-    return numericValue === numericFilter
+    const numericValue = Number(rawValue)
+    const numericFilter = Number(rawFilter)
+    return !Number.isNaN(numericValue) && !Number.isNaN(numericFilter) && numericValue === numericFilter
   }
 
   if (property.baseType === 'boolean') {
-    return comparableValue === comparableFilter
+    return rawValue.toLowerCase() === rawFilter.toLowerCase()
   }
 
   if (property.baseType === 'date' || property.baseType === 'datetime') {
     const valueTime = new Date(rawValue).getTime()
-    const filterTime = new Date(filter.value).getTime()
+    const filterTime = new Date(rawFilter).getTime()
 
-    if (Number.isNaN(valueTime) || Number.isNaN(filterTime)) {
-      return false
+    if (!Number.isNaN(valueTime) && !Number.isNaN(filterTime)) {
+      return valueTime === filterTime
     }
 
-    if (filter.operator === 'before') {
-      return valueTime < filterTime
-    }
-
-    if (filter.operator === 'after') {
-      return valueTime > filterTime
-    }
-
-    return valueTime === filterTime
+    return false
   }
 
-  if (filter.operator === 'equals') {
-    return comparableValue === comparableFilter
-  }
-
-  if (filter.operator === 'starts with') {
-    return comparableValue.startsWith(comparableFilter)
-  }
-
-  return comparableValue.includes(comparableFilter)
+  return rawValue.toLowerCase() === rawFilter.toLowerCase()
 }
 
 function applyFilter() {
-  if (!selectedFilterProperty.value) {
+  if (!selectedFilterProperty.value || isUnsupportedFilterType(selectedFilterProperty.value)) {
     return
   }
 
   appliedFilter.value = {
     objectTypeId: selectedObjectTypeId.value,
     propertyApiName: selectedFilterProperty.value.apiName,
-    operator: filterOperator.value,
+    operator: 'equals',
     value: filterValue.value
   }
 
@@ -304,6 +241,9 @@ function handleAddToCanvas() {
               <div class="add-object-preview-row__name">{{ getInstanceTitle(instance).title }}</div>
             </div>
           </div>
+          <div v-if="previewInstances.length === 0" class="add-object-preview__empty">
+            No matching objects
+          </div>
         </div>
       </section>
 
@@ -334,7 +274,7 @@ function handleAddToCanvas() {
             </select>
           </label>
 
-          <label v-if="filterOperator !== 'is empty'" class="add-object-field">
+          <label class="add-object-field">
             <span>Value</span>
             <select v-if="selectedFilterProperty?.baseType === 'boolean'" v-model="filterValue">
               <option value="true">True</option>
