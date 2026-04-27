@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import type { AddObjectPayload, GraphEdgeData, GraphNodeData, SearchAroundAddPayload, SelectedObject } from '../types/graph'
 import { groupNodesByIds } from '../utils/graphGrouping'
 import {
+  eventInstances,
   flightInstances,
   getObjectTypeById,
   linkTypes,
@@ -49,6 +50,13 @@ const flightPositions: Record<string, { x: number; y: number }> = {
   'AS330-2026-04-25': { x: 50, y: 50 },
   'B6401-2026-04-25': { x: 74, y: 54 },
   'AA1846-2026-04-25': { x: 52, y: 66 }
+}
+
+const eventPositions: Record<string, { x: number; y: number }> = {
+  event_burnin_failure_server02: { x: 64, y: 30 },
+  event_burnin_failure_server05: { x: 78, y: 48 },
+  event_burnin_failure_server06: { x: 74, y: 64 },
+  event_low_pass_rate_workstation2: { x: 63, y: 55 }
 }
 
 const panelPosition = reactive({ x: 8, y: 8 })
@@ -226,6 +234,10 @@ function getDefaultNodePosition(instance: ObjectInstance, index: number) {
     return airportPositions[airportCode] ?? fallbackPosition
   }
 
+  if (instance.objectTypeId === 'object_type_event') {
+    return eventPositions[instance.id] ?? fallbackPosition
+  }
+
   return flightPositions[flightId] ?? fallbackPosition
 }
 
@@ -245,12 +257,24 @@ function createGraphNode(instance: ObjectInstance, index: number, anchor?: Graph
   return {
     id: instance.id,
     label: getInstanceLabel(instance),
-    type: instance.objectTypeId === 'object_type_airport' ? 'airport' : 'flight',
+    type: getNodeType(instance.objectTypeId),
     objectTypeId: instance.objectTypeId,
     instance,
     x: position.x,
     y: position.y
   }
+}
+
+function getNodeType(objectTypeId: string): GraphNodeData['type'] {
+  if (objectTypeId === 'object_type_airport') {
+    return 'airport'
+  }
+
+  if (objectTypeId === 'object_type_event') {
+    return 'event'
+  }
+
+  return 'flight'
 }
 
 function addNodeIfMissing(instance: ObjectInstance, index: number, anchor?: GraphNodeData, total = 1) {
@@ -277,11 +301,68 @@ function toSelectedObject(node: GraphNodeData): SelectedObject {
     title: node.label,
     subtitle: objectType?.displayName ?? node.objectTypeId,
     nodeLabel: node.label,
-    properties
+    properties,
+    events: getRelatedEventsForSelectedObject(node)
   }
 }
 
+function mapEventsForSelection(events: ObjectInstance[]): SelectedObject['events'] {
+  return events.map((event) => {
+    const eventObjectType = getObjectTypeById(event.objectTypeId)
+    const eventProperties =
+      eventObjectType?.properties.map((property) => ({
+        key: property.displayName,
+        value: toDisplayString(event.properties[property.apiName])
+      })) ?? []
+    const severity = toDisplayString(event.properties.severity)
+    const startedAt = toDisplayString(event.properties.startedAt)
+
+    return {
+      id: event.id,
+      title: toDisplayString(event.properties.eventTitle) || event.id,
+      subtitle: [severity, startedAt].filter(Boolean).join(' - '),
+      properties: eventProperties
+    }
+  })
+}
+
+function getRelatedEventsForSelectedObject(node: GraphNodeData): SelectedObject['events'] {
+  if (node.objectTypeId === 'object_type_flight') {
+    return mapEventsForSelection(getFailureEventsByServerId(toDisplayString(node.instance.properties.flightId)))
+  }
+
+  if (node.objectTypeId === 'object_type_airport') {
+    return mapEventsForSelection(getWorkstationEventsByCode(toDisplayString(node.instance.properties.airport)))
+  }
+
+  return []
+}
+
 function countLinkedObjects(node: GraphNodeData, linkType: LinkType) {
+  if (linkType.apiName === 'serverFailureEvent') {
+    if (node.objectTypeId === 'object_type_flight') {
+      return getFailureEventsByServerId(toDisplayString(node.instance.properties.flightId)).length
+    }
+
+    if (node.objectTypeId === 'object_type_event') {
+      return findServerById(node.instance.properties.serverId) ? 1 : 0
+    }
+
+    return 0
+  }
+
+  if (linkType.apiName === 'workstationPassRateEvent') {
+    if (node.objectTypeId === 'object_type_airport') {
+      return getWorkstationEventsByCode(toDisplayString(node.instance.properties.airport)).length
+    }
+
+    if (node.objectTypeId === 'object_type_event') {
+      return findAirportByCode(node.instance.properties.workstationCode) ? 1 : 0
+    }
+
+    return 1
+  }
+
   if (node.objectTypeId === 'object_type_airport') {
     const airportCode = toDisplayString(node.instance.properties.airport)
 
@@ -295,6 +376,29 @@ function countLinkedObjects(node: GraphNodeData, linkType: LinkType) {
   return 1
 }
 
+function getFailureEventsByServerId(serverId: string) {
+  return eventInstances.filter((event) => {
+    return (
+      toDisplayString(event.properties.serverId) === serverId &&
+      toDisplayString(event.properties.eventStatus) === 'Failed'
+    )
+  })
+}
+
+function getWorkstationEventsByCode(workstationCode: string) {
+  return eventInstances.filter((event) => {
+    return toDisplayString(event.properties.workstationCode) === workstationCode
+  })
+}
+
+function findServerById(serverId: PropertyValue) {
+  const resolvedServerId = toDisplayString(serverId)
+
+  return objectInstances.find((instance) => {
+    return instance.objectTypeId === 'object_type_flight' && toDisplayString(instance.properties.flightId) === resolvedServerId
+  })
+}
+
 function findAirportByCode(code: PropertyValue) {
   const airportCode = toDisplayString(code)
 
@@ -304,6 +408,24 @@ function findAirportByCode(code: PropertyValue) {
 }
 
 function getRelatedInstances(startNode: GraphNodeData, linkType: LinkType) {
+  if (linkType.apiName === 'serverFailureEvent') {
+    if (startNode.objectTypeId === 'object_type_flight') {
+      return getFailureEventsByServerId(toDisplayString(startNode.instance.properties.flightId))
+    }
+
+    const server = findServerById(startNode.instance.properties.serverId)
+    return server ? [server] : []
+  }
+
+  if (linkType.apiName === 'workstationPassRateEvent') {
+    if (startNode.objectTypeId === 'object_type_airport') {
+      return getWorkstationEventsByCode(toDisplayString(startNode.instance.properties.airport))
+    }
+
+    const workstation = findAirportByCode(startNode.instance.properties.workstationCode)
+    return workstation ? [workstation] : []
+  }
+
   if (startNode.objectTypeId === 'object_type_airport') {
     const airportCode = toDisplayString(startNode.instance.properties.airport)
 
@@ -335,9 +457,29 @@ function createRelationshipEdge(startNode: GraphNodeData, resultNode: GraphNodeD
     id: `${source}-${linkType.id}-${target}`,
     source,
     target,
-    label: linkType.apiName === 'flightDestinationAirport' ? 'destination' : 'origin',
+    label: getRelationshipLabel(linkType),
     linkTypeId: linkType.id
   }
+}
+
+function getRelationshipLabel(linkType: LinkType) {
+  if (linkType.apiName === 'serverFailureEvent' || linkType.apiName === 'workstationPassRateEvent') {
+    return 'event'
+  }
+
+  return linkType.apiName === 'flightDestinationAirport' ? 'destination' : 'origin'
+}
+
+function getNodeEventCount(node: GraphNodeData) {
+  if (node.objectTypeId === 'object_type_flight') {
+    return getFailureEventsByServerId(toDisplayString(node.instance.properties.flightId)).length
+  }
+
+  if (node.objectTypeId === 'object_type_airport') {
+    return getWorkstationEventsByCode(toDisplayString(node.instance.properties.airport)).length
+  }
+
+  return 0
 }
 
 function addEdgeIfMissing(edge: GraphEdgeData | null) {
@@ -750,6 +892,7 @@ onBeforeUnmount(() => {
       :style="{ left: `${node.x}%`, top: `${node.y}%` }"
       :is-selected="selectedNodeIds.includes(node.id)"
       :is-dragging="dragState.dragging && dragState.nodeId === node.id"
+      :event-count="getNodeEventCount(node)"
       @pointerdown="handleNodePointerDown($event, node.id)"
       @pointermove="handleNodePointerMove"
       @pointerup="handleNodePointerUp"

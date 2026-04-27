@@ -18,6 +18,7 @@ import {
 } from 'lucide-vue-next'
 import {
   airportInstances,
+  eventInstances,
   flightInstances,
   getObjectTypeById,
   linkTypes,
@@ -76,9 +77,37 @@ const selectedFlightId = computed(() => {
   return toDisplayString(props.startingInstance.properties.flightId)
 })
 
+const selectedEventServerId = computed(() => {
+  return toDisplayString(props.startingInstance.properties.serverId)
+})
+
+const selectedEventWorkstationCode = computed(() => {
+  return toDisplayString(props.startingInstance.properties.workstationCode)
+})
+
 const resultInstances = computed(() => {
   if (!selectedLinkType.value) {
     return []
+  }
+
+  if (selectedLinkType.value.apiName === 'serverFailureEvent') {
+    if (props.startingObjectTypeId === 'object_type_flight') {
+      return eventInstances.filter((event) => {
+        return event.properties.serverId === selectedFlightId.value && event.properties.eventStatus === 'Failed'
+      })
+    }
+
+    return flightInstances.filter((flight) => flight.properties.flightId === selectedEventServerId.value)
+  }
+
+  if (selectedLinkType.value.apiName === 'workstationPassRateEvent') {
+    if (props.startingObjectTypeId === 'object_type_airport') {
+      return eventInstances.filter((event) => {
+        return event.properties.workstationCode === selectedAirportCode.value
+      })
+    }
+
+    return airportInstances.filter((airport) => airport.properties.airport === selectedEventWorkstationCode.value)
   }
 
   if (props.startingObjectTypeId === 'object_type_flight') {

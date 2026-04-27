@@ -8,12 +8,21 @@ export interface SelectedObject {
     key: string
     value: string
   }>
+  events?: Array<{
+    id: string
+    title: string
+    subtitle: string
+    properties: Array<{
+      key: string
+      value: string
+    }>
+  }>
 }
 
 export interface GraphNodeData {
   id: string
   label: string
-  type: 'airport' | 'flight'
+  type: 'airport' | 'flight' | 'event'
   objectTypeId: string
   instance: ObjectInstance
   x: number

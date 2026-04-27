@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+  AlertTriangle,
   ChevronDown,
   CirclePlus,
   ExternalLink,
@@ -10,15 +11,16 @@ import {
   Plus,
   Route,
   Settings,
+  Sparkles,
   SquarePen
 } from 'lucide-vue-next'
-import { ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { ObjectInstance, ObjectType } from '../mock/mock'
 import type { AddObjectPayload, SelectedObject } from '../types/graph'
 import AddObjectDrawer from './AddObjectDrawer.vue'
 import PropertyList from './PropertyList.vue'
 
-defineProps<{
+const props = defineProps<{
   selectedObject: SelectedObject | null
   graphStats: {
     objects: number
@@ -49,6 +51,9 @@ const primaryTabs = ['Layers', 'Selection', 'Search', 'Histogram', 'Info']
 const suppressNextTabClick = ref(false)
 const selectedLayerObjectTypeId = ref('object_type_flight')
 const isAddObjectDrawerOpen = ref(false)
+const activeSecondaryTab = ref('Properties')
+const activeAiEventId = ref('')
+const eventCount = computed(() => props.selectedObject?.events?.length ?? 0)
 
 const tabDragState = {
   tab: '',
@@ -124,6 +129,10 @@ function handleTabPointerUp(event: PointerEvent, tab: string) {
 }
 
 function getNodeGroupIcon(apiName: string) {
+  if (apiName === 'event') {
+    return AlertTriangle
+  }
+
   return apiName === 'flight' ? Route : MapPin
 }
 
@@ -143,6 +152,78 @@ function handleAddToCanvas(payload: AddObjectPayload) {
   emit('addToCanvas', payload)
   console.log('add object drawer payload', payload)
 }
+
+function getEventProperty(event: NonNullable<SelectedObject['events']>[number], key: string) {
+  return event.properties.find((property) => property.key === key)?.value ?? ''
+}
+
+function getEventAiInsight(event: NonNullable<SelectedObject['events']>[number]) {
+  const summary = getEventProperty(event, 'Summary')
+  const severity = getEventProperty(event, 'Severity')
+  const startedAt = getEventProperty(event, 'Started At')
+  const eventType = getEventProperty(event, 'Event Type')
+  const eventTitle = getEventProperty(event, 'Event Title') || event.title
+
+  if (`${eventType} ${summary}`.toLowerCase().includes('pass rate')) {
+    const workstationCode = getEventProperty(event, 'Workstation Code')
+    const passRate = getEventProperty(event, 'Pass Rate Percent')
+    const threshold = getEventProperty(event, 'Threshold Percent')
+
+    return {
+      headline: 'Likely station-level yield degradation',
+      confidence: '79%',
+      basis: `${workstationCode || 'The workstation'} is reporting a ${passRate || 'below-target'}% pass rate against the ${threshold || 'configured'}% threshold, which points to a shared station condition rather than one isolated server failure.`,
+      nextStep: 'Compare all servers assigned to this workstation, then inspect fixture seating, PDU stability, chamber temperature drift, and burn-in profile changes during the affected window.'
+    }
+  }
+
+  if (summary.toLowerCase().includes('ecc')) {
+    return {
+      headline: 'Likely memory stability issue',
+      confidence: '87%',
+      basis: `The failure signature mentions ECC threshold pressure during burn-in. Severity is ${severity || 'elevated'} and the event started at ${startedAt || 'the recorded failure window'}.`,
+      nextStep: 'Rerun memory stress with DIMM slot telemetry enabled, then compare corrected-error counts against adjacent servers in the same workstation.'
+    }
+  }
+
+  if (summary.toLowerCase().includes('pcie')) {
+    return {
+      headline: 'Likely PCIe link instability',
+      confidence: '82%',
+      basis: `The event title "${eventTitle}" and summary both point to GPU PCIe stress instability rather than a generic thermal stop.`,
+      nextStep: 'Check GPU riser seating, PCIe replay counters, and slot power history before rerunning the GPU profile.'
+    }
+  }
+
+  if (summary.toLowerCase().includes('thermal')) {
+    return {
+      headline: 'Likely thermal margin breach',
+      confidence: '84%',
+      basis: `The event reports thermal margin below threshold, which usually indicates airflow, heatsink contact, or workload power excursion during burn-in.`,
+      nextStep: 'Inspect fan curve telemetry, inlet temperature, heatsink pressure, and CPU package power around the failure interval.'
+    }
+  }
+
+  return {
+    headline: 'Likely burn-in profile failure',
+    confidence: '74%',
+    basis: summary || 'The event is marked as failed and linked to this server during the burn-in window.',
+    nextStep: 'Review the failing workload step, recent sensor excursions, and matching events on nearby servers.'
+  }
+}
+
+function askAiAboutEvent(event: NonNullable<SelectedObject['events']>[number]) {
+  activeAiEventId.value = activeAiEventId.value === event.id ? '' : event.id
+  console.log('ask ai about event', event.id)
+}
+
+watch(
+  () => props.selectedObject?.nodeLabel,
+  () => {
+    activeSecondaryTab.value = 'Properties'
+    activeAiEventId.value = ''
+  }
+)
 </script>
 
 <template>
@@ -277,21 +358,96 @@ function handleAddToCanvas(payload: AddObjectPayload) {
           </div>
 
           <div class="selection-panel__subtabs">
-            <button class="subtab subtab--active">Properties</button>
-            <button class="subtab">Series</button>
-            <button class="subtab">
+            <button
+              class="subtab"
+              :class="{ 'subtab--active': activeSecondaryTab === 'Properties' }"
+              @click="activeSecondaryTab = 'Properties'"
+            >
+              Properties
+            </button>
+            <button
+              class="subtab"
+              :class="{ 'subtab--active': activeSecondaryTab === 'Series' }"
+              @click="activeSecondaryTab = 'Series'"
+            >
+              Series
+            </button>
+            <button
+              class="subtab"
+              :class="{ 'subtab--active': activeSecondaryTab === 'Events' }"
+              @click="activeSecondaryTab = 'Events'"
+            >
               Events
-              <span class="subtab__badge">0</span>
+              <span class="subtab__badge">{{ eventCount }}</span>
             </button>
           </div>
 
-          <div class="selection-panel__filter">
-            <input v-model="filterText" type="text" placeholder="Filter..." />
+          <template v-if="activeSecondaryTab === 'Properties'">
+            <div class="selection-panel__filter">
+              <input v-model="filterText" type="text" placeholder="Filter..." />
+            </div>
+
+            <PropertyList :items="selectedObject.properties" />
+          </template>
+
+          <template v-else-if="activeSecondaryTab === 'Events'">
+            <div v-if="selectedObject.events?.length" class="event-list" aria-label="Object events">
+              <article v-for="event in selectedObject.events" :key="event.id" class="event-card">
+                <div class="event-card__header">
+                  <div class="event-card__icon">
+                    <AlertTriangle :size="16" />
+                  </div>
+                  <div class="event-card__copy">
+                    <div class="event-card__title">{{ event.title }}</div>
+                    <div class="event-card__subtitle">{{ event.subtitle }}</div>
+                  </div>
+                </div>
+                <PropertyList :items="event.properties" />
+                <div class="event-card__ai-actions">
+                  <button
+                    class="ask-ai-button"
+                    type="button"
+                    :aria-expanded="activeAiEventId === event.id"
+                    @click="askAiAboutEvent(event)"
+                  >
+                    <Sparkles :size="15" />
+                    <span>Ask AI</span>
+                    <ChevronDown :size="14" />
+                  </button>
+                </div>
+                <div v-if="activeAiEventId === event.id" class="ai-insight">
+                  <div class="ai-insight__header">
+                    <Sparkles :size="16" />
+                    <span>AI root-cause read</span>
+                    <strong>{{ getEventAiInsight(event).confidence }}</strong>
+                  </div>
+                  <div class="ai-insight__headline">{{ getEventAiInsight(event).headline }}</div>
+                  <p>{{ getEventAiInsight(event).basis }}</p>
+                  <div class="ai-insight__next">
+                    <span>Next check</span>
+                    {{ getEventAiInsight(event).nextStep }}
+                  </div>
+                </div>
+              </article>
+            </div>
+
+            <div v-else class="selection-panel__empty">
+              <div class="selection-panel__empty-title">No events</div>
+              <div class="selection-panel__empty-copy">This object has no related burn-in failure events.</div>
+            </div>
+          </template>
+
+          <div v-else class="selection-panel__empty">
+            <div class="selection-panel__empty-title">Series</div>
+            <div class="selection-panel__empty-copy">No series configured for this object.</div>
           </div>
 
-          <PropertyList :items="selectedObject.properties" />
-
-          <button class="selection-panel__add" aria-label="Add property" @click="console.log('add property')">
+          <button
+            v-if="activeSecondaryTab === 'Properties'"
+            class="selection-panel__add"
+            aria-label="Add property"
+            @click="console.log('add property')"
+          >
             <Plus :size="16" />
           </button>
         </template>
