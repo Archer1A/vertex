@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import type { AddObjectPayload, GraphEdgeData, GraphNodeData, SearchAroundAddPayload, SelectedObject } from '../types/graph'
 import { groupNodesByIds } from '../utils/graphGrouping'
 import {
@@ -16,6 +16,7 @@ import FloatingControls from './FloatingControls.vue'
 import GraphNode from './GraphNode.vue'
 import LeftSelectionPanel from './LeftSelectionPanel.vue'
 import MainToolbar from './MainToolbar.vue'
+import MetricsWorkspacePanel from './MetricsWorkspacePanel.vue'
 import RightVerticalPanel from './RightVerticalPanel.vue'
 import SearchAroundPanel from './SearchAroundPanel.vue'
 
@@ -29,6 +30,8 @@ const selectedNodeIds = ref<string[]>([])
 const isSearchAroundOpen = ref(false)
 const searchAroundStartNodeId = ref('')
 const searchAroundLinkType = ref<LinkType | null>(null)
+const isMetricsWorkspaceOpen = ref(false)
+const metricsWorkspaceNodeId = ref('')
 const nodeTool = reactive({ open: false, nodeId: '', x: 0, y: 0 })
 const objectTypeChooser = reactive({ open: false, nodeId: '', x: 0, y: 0 })
 
@@ -99,6 +102,14 @@ const searchAroundStartNode = computed(() => {
 
 const searchAroundSelectedObject = computed<SelectedObject | null>(() => {
   return searchAroundStartNode.value ? toSelectedObject(searchAroundStartNode.value) : null
+})
+
+const metricsWorkspaceNode = computed(() => {
+  return graphNodes.find((node) => node.id === metricsWorkspaceNodeId.value) ?? null
+})
+
+const metricsWorkspaceObjectType = computed(() => {
+  return metricsWorkspaceNode.value ? getObjectTypeById(metricsWorkspaceNode.value.objectTypeId) ?? null : null
 })
 
 const associatedObjectTypeOptions = computed(() => {
@@ -471,6 +482,36 @@ function selectNode(nodeId: string, additive: boolean) {
   selectedNodeId.value = nodeId
 }
 
+function openMetricsWorkspace(nodeId: string) {
+  const node = graphNodes.find((item) => item.id === nodeId)
+
+  if (!node) {
+    console.log('metrics workspace skipped: node not found', nodeId)
+    return
+  }
+
+  selectedNodeId.value = nodeId
+  selectedNodeIds.value = [nodeId]
+  metricsWorkspaceNodeId.value = nodeId
+  isMetricsWorkspaceOpen.value = true
+  nodeTool.open = false
+  objectTypeChooser.open = false
+
+  console.log('open metrics workspace', nodeId)
+}
+
+function closeMetricsWorkspace() {
+  isMetricsWorkspaceOpen.value = false
+  metricsWorkspaceNodeId.value = ''
+  console.log('close metrics workspace')
+}
+
+function handleDocumentKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && isMetricsWorkspaceOpen.value) {
+    closeMetricsWorkspace()
+  }
+}
+
 function openAssociatedObjectTypes() {
   objectTypeChooser.open = true
   objectTypeChooser.nodeId = nodeTool.nodeId
@@ -668,7 +709,12 @@ function handleNodePointerUp(event: PointerEvent) {
   dragState.nodeId = ''
 }
 
+onMounted(() => {
+  document.addEventListener('keydown', handleDocumentKeydown)
+})
+
 onBeforeUnmount(() => {
+  document.removeEventListener('keydown', handleDocumentKeydown)
   dragState.dragging = false
   dragState.nodeId = ''
 })
@@ -709,6 +755,13 @@ onBeforeUnmount(() => {
       :initial-link-type="searchAroundLinkType"
       @add-to-graph="handleAddSearchAroundToGraph"
       @close="isSearchAroundOpen = false"
+      @click="handlePanelClick"
+    />
+    <MetricsWorkspacePanel
+      v-if="isMetricsWorkspaceOpen && metricsWorkspaceNode && metricsWorkspaceObjectType"
+      :node="metricsWorkspaceNode"
+      :object-type="metricsWorkspaceObjectType"
+      @close="closeMetricsWorkspace"
       @click="handlePanelClick"
     />
     <RightVerticalPanel
@@ -755,6 +808,7 @@ onBeforeUnmount(() => {
       @pointerup="handleNodePointerUp"
       @pointercancel="handleNodePointerUp"
       @contextmenu="handleNodeContextMenu($event, node.id)"
+      @dblclick.stop="openMetricsWorkspace(node.id)"
       @click.stop
     />
     <div
