@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import type { AddObjectPayload, GraphEdgeData, GraphNodeData, SearchAroundAddPayload, SelectedObject } from '../types/graph'
+import type { TimeSeriesValue } from '../mock/types'
 import { groupNodesByIds } from '../utils/graphGrouping'
 import {
   flightInstances,
@@ -221,6 +222,36 @@ function getObjectTypeName(objectTypeId: string) {
   return getObjectTypeById(objectTypeId)?.displayName ?? objectTypeId
 }
 
+function isTimeSeriesValue(value: unknown): value is TimeSeriesValue {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    'granularity' in value &&
+    'points' in value
+  )
+}
+
+function getTimeSeriesForInstance(instance: ObjectInstance, objectTypeId: string): NonNullable<SelectedObject['timeSeries']> {
+  const objectType = getObjectTypeById(objectTypeId)
+  if (!objectType) return []
+
+  return objectType.properties
+    .filter((property) => property.baseType === 'timeseries')
+    .map((property) => {
+      const raw = instance.properties[property.apiName] ?? instance.properties[property.id]
+      if (!isTimeSeriesValue(raw)) return null
+      return {
+        apiName: property.apiName,
+        displayName: property.displayName,
+        unit: raw.unit,
+        granularity: raw.granularity,
+        points: raw.points
+      }
+    })
+    .filter((row): row is NonNullable<typeof row> => Boolean(row))
+}
+
 function clampPercent(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
 }
@@ -279,16 +310,19 @@ function addNodeIfMissing(instance: ObjectInstance, index: number, anchor?: Grap
 function toSelectedObject(node: GraphNodeData): SelectedObject {
   const objectType = getObjectTypeById(node.objectTypeId)
   const properties =
-    objectType?.properties.map((property) => ({
-      key: property.displayName,
-      value: toDisplayString(node.instance.properties[property.apiName])
-    })) ?? []
+    objectType?.properties
+      .filter((property) => property.baseType !== 'timeseries')
+      .map((property) => ({
+        key: property.displayName,
+        value: toDisplayString(node.instance.properties[property.apiName])
+      })) ?? []
 
   return {
     title: node.label,
     subtitle: objectType?.displayName ?? node.objectTypeId,
     nodeLabel: node.label,
-    properties
+    properties,
+    timeSeries: getTimeSeriesForInstance(node.instance, node.objectTypeId)
   }
 }
 
