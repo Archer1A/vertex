@@ -1,4 +1,4 @@
-import { type PropertyType, type ObjectInstance, type TimeSeriesValue } from './types'
+import { type ObjectType, type PropertyType, type ObjectInstance, type TimeSeriesValue } from './types'
 
 export const PRODUCTION_ORDER_OBJECT_TYPE_ID = 'object_type_production_order'
 
@@ -92,6 +92,19 @@ function buildDailySeries(startDate: string, dailyValues: Array<number | null>, 
   })
 
   return { granularity: 'day', unit, points }
+}
+
+export const productionOrderObjectType: ObjectType = {
+  id: PRODUCTION_ORDER_OBJECT_TYPE_ID,
+  apiName: 'productionOrder',
+  displayName: '[Example Data] Production Order',
+  description: 'Mock production order object type with time series properties.',
+  icon: 'package',
+  color: '#059669',
+  status: 'active',
+  primaryKeyPropertyId: 'production_order_number',
+  titlePropertyId: 'production_order_number',
+  properties: productionOrderProperties
 }
 
 export const productionOrderInstances: ObjectInstance[] = [

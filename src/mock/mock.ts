@@ -2,6 +2,19 @@ import type { ObjectType, LinkType, PropertyType, PropertyValue, ObjectInstance,
 
 export type { ObjectType, LinkType, PropertyType, PropertyValue, ObjectInstance, TimeSeriesPoint, TimeSeriesValue }
 
+import {
+  PRODUCTION_ORDER_OBJECT_TYPE_ID,
+  productionOrderObjectType,
+  productionOrderProperties,
+  productionOrderInstances
+} from './production'
+export {
+  PRODUCTION_ORDER_OBJECT_TYPE_ID,
+  productionOrderObjectType,
+  productionOrderProperties,
+  productionOrderInstances
+}
+
 export const flightProperties: PropertyType[] = [
   { "id": "flight_id", "objectTypeId": "object_type_flight", "apiName": "flightId", "displayName": "Flight ID", "description": "Unique identifier for a scheduled or operated flight.", "baseType": "string", "required": true, "isPrimaryKey": true, "searchable": true, "sortable": true, "filterable": true },
   { "id": "flight_number", "objectTypeId": "object_type_flight", "apiName": "flightNumber", "displayName": "Flight Number", "description": "Public airline flight number shown to passengers.", "baseType": "string", "required": true, "isTitleKey": true, "searchable": true, "sortable": true, "filterable": true },
@@ -68,7 +81,8 @@ export const airportObjectType: ObjectType = {
 
 export const objectTypes: ObjectType[] = [
   airportObjectType,
-  flightObjectType
+  flightObjectType,
+  productionOrderObjectType
 ]
 
 export const flightOriginAirportLinkType: LinkType = {

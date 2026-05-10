@@ -12,13 +12,14 @@ import {
   Settings,
   SquarePen
 } from 'lucide-vue-next'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { ObjectInstance, ObjectType } from '../mock/mock'
 import type { AddObjectPayload, SelectedObject } from '../types/graph'
 import AddObjectDrawer from './AddObjectDrawer.vue'
 import PropertyList from './PropertyList.vue'
+import TimeSeriesChart from './TimeSeriesChart.vue'
 
-defineProps<{
+const props = defineProps<{
   selectedObject: SelectedObject | null
   graphStats: {
     objects: number
@@ -49,6 +50,7 @@ const primaryTabs = ['Layers', 'Selection', 'Search', 'Histogram', 'Info']
 const suppressNextTabClick = ref(false)
 const selectedLayerObjectTypeId = ref('object_type_flight')
 const isAddObjectDrawerOpen = ref(false)
+const activeSecondaryTab = ref('Properties')
 
 const tabDragState = {
   tab: '',
@@ -122,6 +124,20 @@ function handleTabPointerUp(event: PointerEvent, tab: string) {
   tabDragState.tab = ''
   tabDragState.dragging = false
 }
+
+const timeSeriesRows = computed(() => props.selectedObject?.timeSeries ?? [])
+const planned = computed(() => timeSeriesRows.value.find((row) => row.apiName === 'dailyPlannedQuantity'))
+const actual = computed(() => timeSeriesRows.value.find((row) => row.apiName === 'dailyActualQuantity'))
+const chartSeries = computed(() => {
+  const series = []
+  if (planned.value) {
+    series.push({ key: planned.value.apiName, label: planned.value.displayName, color: '#2563eb', unit: planned.value.unit, points: planned.value.points })
+  }
+  if (actual.value) {
+    series.push({ key: actual.value.apiName, label: actual.value.displayName, color: '#7c3aed', unit: actual.value.unit, points: actual.value.points })
+  }
+  return series
+})
 
 function getNodeGroupIcon(apiName: string) {
   return apiName === 'flight' ? Route : MapPin
@@ -277,23 +293,41 @@ function handleAddToCanvas(payload: AddObjectPayload) {
           </div>
 
           <div class="selection-panel__subtabs">
-            <button class="subtab subtab--active">Properties</button>
-            <button class="subtab">Series</button>
-            <button class="subtab">
+            <button class="subtab" :class="{ 'subtab--active': activeSecondaryTab === 'Properties' }" @click="activeSecondaryTab = 'Properties'">Properties</button>
+            <button class="subtab" :class="{ 'subtab--active': activeSecondaryTab === 'Series' }" @click="activeSecondaryTab = 'Series'">Series</button>
+            <button class="subtab" :class="{ 'subtab--active': activeSecondaryTab === 'Events' }" @click="activeSecondaryTab = 'Events'">
               Events
               <span class="subtab__badge">0</span>
             </button>
           </div>
 
-          <div class="selection-panel__filter">
-            <input v-model="filterText" type="text" placeholder="Filter..." />
-          </div>
+          <template v-if="activeSecondaryTab === 'Properties'">
+            <div class="selection-panel__filter">
+              <input v-model="filterText" type="text" placeholder="Filter..." />
+            </div>
+            <PropertyList :items="selectedObject.properties" />
+            <button class="selection-panel__add" aria-label="Add property" @click="console.log('add property')">
+              <Plus :size="16" />
+            </button>
+          </template>
 
-          <PropertyList :items="selectedObject.properties" />
+          <template v-else-if="activeSecondaryTab === 'Series'">
+            <div v-if="chartSeries.length" class="series-panel">
+              <div class="series-panel__title">Daily production</div>
+              <TimeSeriesChart :series="chartSeries" :height="180" />
+            </div>
+            <div v-else class="selection-panel__empty">
+              <div class="selection-panel__empty-title">Series</div>
+              <div class="selection-panel__empty-copy">No series configured for this object.</div>
+            </div>
+          </template>
 
-          <button class="selection-panel__add" aria-label="Add property" @click="console.log('add property')">
-            <Plus :size="16" />
-          </button>
+          <template v-else-if="activeSecondaryTab === 'Events'">
+            <div class="selection-panel__empty">
+              <div class="selection-panel__empty-title">Events</div>
+              <div class="selection-panel__empty-copy">No events for this object.</div>
+            </div>
+          </template>
         </template>
 
         <div v-else class="selection-panel__empty">
@@ -309,3 +343,15 @@ function handleAddToCanvas(payload: AddObjectPayload) {
     </template>
   </aside>
 </template>
+
+<style scoped>
+.series-panel {
+  padding: 12px 12px 16px;
+  display: grid;
+  gap: 10px;
+}
+.series-panel__title {
+  font-size: 12px;
+  color: #6b7280;
+}
+</style>
