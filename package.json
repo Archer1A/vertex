@@ -7,6 +7,7 @@
     "dev": "vite",
     "test:add-object-type": "node scripts/addObjectType.test.mjs",
     "test:graph-grouping": "node scripts/graphGrouping.test.mjs",
+    "test:event-bindings": "node scripts/eventBindings.test.mjs",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview"
   },
