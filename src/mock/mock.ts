@@ -132,7 +132,8 @@ export const flightInstances: ObjectInstance[] = [
 
 export const objectInstances: ObjectInstance[] = [
   ...airportInstances,
-  ...flightInstances
+  ...flightInstances,
+  ...productionOrderInstances
 ]
 
 export function getObjectTypes(): ObjectType[] {
