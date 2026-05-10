@@ -106,7 +106,11 @@ function toDisplayString(value: PropertyValue): string {
     return value.join(', ')
   }
 
-  return `${value.latitude}, ${value.longitude}`
+  if (typeof value === 'object' && value !== null && 'latitude' in value && 'longitude' in value) {
+    return `${value.latitude}, ${value.longitude}`
+  }
+
+  return ''
 }
 
 function getInstanceTitle(instance: ObjectInstance) {

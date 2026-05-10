@@ -186,7 +186,7 @@ const edgeLines = computed(() =>
 )
 
 function isGeoPoint(value: PropertyValue): value is { latitude: number; longitude: number } {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
+  return typeof value === 'object' && value !== null && !Array.isArray(value) && 'latitude' in value
 }
 
 function toDisplayString(value: PropertyValue): string {
