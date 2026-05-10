@@ -22,6 +22,7 @@ import PropertyList from './PropertyList.vue'
 
 const props = defineProps<{
   selectedObject: SelectedObject | null
+  pinnedPropertyApiNames: string[]
   graphStats: {
     objects: number
     nodes: number
@@ -42,6 +43,7 @@ const emit = defineEmits<{
   (event: 'dockTool', payload: { tab: string; clientX: number; clientY: number }): void
   (event: 'addToCanvas', payload: AddObjectPayload): void
   (event: 'applyInstanceFilter', payload: InstanceFilterPayload): void
+  (event: 'togglePinnedProperty', payload: { objectTypeId: string; propertyApiName: string }): void
 }>()
 
 const filterText = ref('')
@@ -60,6 +62,14 @@ const isObjectTypeSelection = computed(() => selectedObjectKind.value === 'objec
 const instanceFilterProperties = computed(() => props.selectedObject?.instanceProperties ?? [])
 const instanceCount = computed(() => props.selectedObject?.instances?.length ?? 0)
 const eventCount = computed(() => props.selectedObject?.events?.length ?? 0)
+
+function handleTogglePinnedProperty(propertyApiName: string) {
+  if (!props.selectedObject) {
+    return
+  }
+
+  emit('togglePinnedProperty', { objectTypeId: props.selectedObject.objectTypeId, propertyApiName })
+}
 
 const tabDragState = {
   tab: '',
@@ -251,7 +261,12 @@ watch(
       activePrimaryTab.value = 'Selection'
     }
 
-    activeSecondaryTab.value = isObjectTypeSelection.value ? 'Instances' : 'Properties'
+    activeSecondaryTab.value =
+      (props.selectedObject?.events?.length ?? 0) > 0
+        ? 'Events'
+        : isObjectTypeSelection.value
+          ? 'Instances'
+          : 'Properties'
     activeAiEventId.value = ''
     syncInstanceFilterControls()
   }
@@ -427,7 +442,13 @@ watch(
               <input v-model="filterText" type="text" placeholder="Filter..." />
             </div>
 
-            <PropertyList :items="selectedObject.properties" />
+            <PropertyList
+              :items="selectedObject.properties"
+              :show-pin="isObjectTypeSelection"
+              :pinned-api-names="pinnedPropertyApiNames"
+              :pin-limit="2"
+              @toggle-pin="handleTogglePinnedProperty"
+            />
           </template>
 
           <template v-else-if="activeSecondaryTab === 'Instances'">
