@@ -22,6 +22,7 @@ export interface LinkType {
   cardinality: 'one-to-one' | 'one-to-many' | 'many-to-one' | 'many-to-many'
   direction: 'directed' | 'bidirectional'
   properties?: PropertyType[]
+  showInNode: boolean
 }
 
 export interface PropertyType {
@@ -48,6 +49,7 @@ export interface PropertyType {
   searchable?: boolean
   sortable?: boolean
   filterable?: boolean
+  showInNode?: boolean
   timeSeries?: {
     granularity: 'day' | 'hour'
     valueBaseType: 'number' | 'integer'
@@ -76,4 +78,12 @@ export interface ObjectInstance {
   id: string
   objectTypeId: string
   properties: Record<string, PropertyValue>
+}
+
+export interface LinkInstance {
+  id: string
+  linkTypeId: string
+  sourceObjectInstanceId: string
+  targetObjectInstanceId: string
+  properties?: Record<string, PropertyValue>
 }

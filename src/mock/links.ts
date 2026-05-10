@@ -24,6 +24,7 @@ export const projectToLineItemLinkType: LinkType = {
   sourceObjectTypeId: 'object_type_project',
   targetObjectTypeId: 'object_type_project_line_item',
   cardinality: 'one-to-many',
+  showInNode: true,
   direction: 'directed'
 }
 
@@ -36,6 +37,7 @@ export const lineItemToSkuLinkType: LinkType = {
   sourceObjectTypeId: 'object_type_project_line_item',
   targetObjectTypeId: 'object_type_server_sku',
   cardinality: 'many-to-one',
+  showInNode: true,
   direction: 'directed'
 }
 
@@ -48,6 +50,7 @@ export const skuToMaterialLinkType: LinkType = {
   sourceObjectTypeId: 'object_type_server_sku',
   targetObjectTypeId: 'object_type_material',
   cardinality: 'many-to-one',
+  showInNode: true,
   direction: 'directed'
 }
 
@@ -60,6 +63,7 @@ export const lineItemToDemandLinkType: LinkType = {
   sourceObjectTypeId: 'object_type_project_line_item',
   targetObjectTypeId: 'object_type_material_demand',
   cardinality: 'one-to-many',
+  showInNode: true,
   direction: 'directed'
 }
 
@@ -72,6 +76,7 @@ export const demandToMaterialLinkType: LinkType = {
   sourceObjectTypeId: 'object_type_material_demand',
   targetObjectTypeId: 'object_type_material',
   cardinality: 'many-to-one',
+  showInNode: true,
   direction: 'directed'
 }
 
@@ -84,6 +89,7 @@ export const demandParentChildLinkType: LinkType = {
   sourceObjectTypeId: 'object_type_material_demand',
   targetObjectTypeId: 'object_type_material_demand',
   cardinality: 'one-to-many',
+  showInNode: true,
   direction: 'directed'
 }
 
@@ -96,6 +102,7 @@ export const bomLineParentMaterialLinkType: LinkType = {
   sourceObjectTypeId: 'object_type_bom_line',
   targetObjectTypeId: 'object_type_material',
   cardinality: 'many-to-one',
+  showInNode: true,
   direction: 'directed'
 }
 
@@ -108,6 +115,7 @@ export const bomLineChildMaterialLinkType: LinkType = {
   sourceObjectTypeId: 'object_type_bom_line',
   targetObjectTypeId: 'object_type_material',
   cardinality: 'many-to-one',
+  showInNode: true,
   direction: 'directed'
 }
 
@@ -120,6 +128,7 @@ export const productionOrderToMaterialLinkType: LinkType = {
   sourceObjectTypeId: 'object_type_production_order',
   targetObjectTypeId: 'object_type_material',
   cardinality: 'many-to-one',
+  showInNode: true,
   direction: 'directed'
 }
 
@@ -132,6 +141,7 @@ export const productionOrderToDemandLinkType: LinkType = {
   sourceObjectTypeId: 'object_type_production_order',
   targetObjectTypeId: 'object_type_material_demand',
   cardinality: 'many-to-one',
+  showInNode: true,
   direction: 'directed'
 }
 
@@ -144,6 +154,7 @@ export const productionOrderToPlantLinkType: LinkType = {
   sourceObjectTypeId: 'object_type_production_order',
   targetObjectTypeId: 'object_type_plant',
   cardinality: 'many-to-one',
+  showInNode: true,
   direction: 'directed'
 }
 
@@ -156,6 +167,7 @@ export const serverAssignedWorkstationLinkType: LinkType = {
   sourceObjectTypeId: 'object_type_flight',
   targetObjectTypeId: 'object_type_airport',
   cardinality: 'many-to-one',
+  showInNode: true,
   direction: 'directed'
 }
 
@@ -168,6 +180,7 @@ export const serverFailureEventLinkType: LinkType = {
   sourceObjectTypeId: 'object_type_flight',
   targetObjectTypeId: 'object_type_event',
   cardinality: 'one-to-many',
+  showInNode: true,
   direction: 'directed'
 }
 
@@ -180,6 +193,7 @@ export const workstationPassRateEventLinkType: LinkType = {
   sourceObjectTypeId: 'object_type_airport',
   targetObjectTypeId: 'object_type_event',
   cardinality: 'one-to-many',
+  showInNode: true,
   direction: 'directed'
 }
 

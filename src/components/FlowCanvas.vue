@@ -46,26 +46,26 @@ const keyToNode = computed(() => {
 
 const positioned = computed<PositionedFlowNode[]>(() => {
   const out: PositionedFlowNode[] = []
-  let row = 0
 
-  function place(nodes: FlowNode[], prefix: string, depth: number) {
+  function place(nodes: FlowNode[], prefix: string, depth: number, startX: number) {
+    let col = 0
     nodes.forEach((node, idx) => {
       const key = prefix ? `${prefix}/${idx}` : `${idx}`
       const offset = manualOffsetsByKey.value[key] ?? { x: 0, y: 0 }
-      const x = PAD_X + depth * (NODE_W + GAP_X) + offset.x
-      const y = PAD_Y + row * (NODE_H + GAP_Y) + offset.y
+      const x = startX + col * (NODE_W + GAP_X) + offset.x
+      const y = PAD_Y + depth * (NODE_H + GAP_Y) + offset.y
       out.push({ key, node, x, y, depth })
 
-      row += 1
+      col += 1
 
       const hasChildren = (node.childrenFlow?.length ?? 0) > 0
       if (hasChildren && isExpanded(key)) {
-        place(node.childrenFlow, key, depth + 1)
+        place(node.childrenFlow, key, depth + 1, x)
       }
     })
   }
 
-  place(flowData, '', 0)
+  place(flowData, '', 0, PAD_X)
   return out
 })
 
@@ -95,6 +95,14 @@ function onMove(key: string, dx: number, dy: number) {
     }
   }
 }
+
+function printPositions() {
+  const positions: Record<string, { x: number; y: number }> = {}
+  positioned.value.forEach((p) => {
+    positions[p.key] = { x: p.x, y: p.y }
+  })
+  console.log(JSON.stringify(positions, null, 2))
+}
 </script>
 
 <template>
@@ -114,6 +122,9 @@ function onMove(key: string, dx: number, dy: number) {
         @move="onMove"
       />
     </div>
+    <button class="flow-canvas__print-btn" type="button" @click.stop="printPositions">
+      打印坐标
+    </button>
   </div>
 </template>
 
@@ -124,6 +135,24 @@ function onMove(key: string, dx: number, dy: number) {
   width: 100%;
   overflow: hidden;
   background: #f6f7f9;
+}
+
+.flow-canvas__print-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  padding: 6px 12px;
+  border: 1px solid #6366f1;
+  border-radius: 6px;
+  background: #eef2ff;
+  font: 500 12px/1.2 Inter, sans-serif;
+  color: #4338ca;
+  cursor: pointer;
+}
+
+.flow-canvas__print-btn:hover {
+  background: #e0e7ff;
 }
 
 .flow-canvas__surface {

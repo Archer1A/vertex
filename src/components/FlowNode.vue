@@ -29,14 +29,11 @@ const points = computed(() => {
   return '80,20 100,60 80,100 160,100 180,60 160,20'
 })
 
-function onClick(e: MouseEvent) {
+function onDblClick(e: MouseEvent) {
   e.stopPropagation()
-  if (didDrag.value) {
-    didDrag.value = false
-    return
-  }
+  if (!hasChildren.value) return
 
-  console.log('flow node clicked', props.nodeKey, props.node.name)
+  console.log('flow node dblclick', props.nodeKey, props.node.name)
   emit('toggle', props.nodeKey)
 }
 
@@ -85,7 +82,7 @@ function onPointerDown(e: PointerEvent) {
       class="flow-node__hit"
       :class="{ 'flow-node__hit--dragging': isDragging }"
       type="button"
-      @click="onClick"
+      @dblclick="onDblClick"
       @pointerdown="onPointerDown"
     >
       <svg
@@ -100,14 +97,6 @@ function onPointerDown(e: PointerEvent) {
       </svg>
 
       <span class="flow-node__label" :title="node.name">{{ node.name }}</span>
-
-      <span
-        v-if="hasChildren"
-        class="flow-node__badge"
-        :class="{ 'flow-node__badge--open': expanded }"
-      >
-        {{ expanded ? '−' : '+' }}
-      </span>
     </button>
   </div>
 </template>
@@ -163,31 +152,6 @@ function onPointerDown(e: PointerEvent) {
   text-overflow: ellipsis;
   text-align: center;
   pointer-events: none;
-}
-
-.flow-node__badge {
-  position: absolute;
-  right: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 20px;
-  height: 20px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: #ffffff;
-  border: 1px solid #d9dde3;
-  color: #111827;
-  font: 700 12px/1 Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.10);
-  pointer-events: none;
-}
-
-.flow-node__badge--open {
-  background: #eef2ff;
-  border-color: #c7d2fe;
-  color: #3730a3;
 }
 
 .flow-node__hit:hover .flow-node__shape {

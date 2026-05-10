@@ -15,7 +15,7 @@ const props = defineProps<{
 }>()
 
 const hasEventBadge = computed(() => {
-  return props.nodeKind !== 'objectType' && (props.eventCount ?? 0) > 0
+  return (props.eventCount ?? 0) > 0
 })
 </script>
 
