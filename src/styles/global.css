@@ -2921,7 +2921,7 @@ button {
 }
 
 .graph-node__icon {
-  position: relative;
+  position: static;
   width: 46px;
   height: 46px;
   border-radius: 9px;
@@ -2951,8 +2951,8 @@ button {
 .graph-node__event-badge {
   --event-badge-color: #dc2626;
   position: absolute;
-  top: -6px;
-  right: -6px;
+  top: 8px;
+  right: 8px;
   display: inline-flex;
   min-width: 18px;
   height: 18px;
