@@ -8,6 +8,13 @@ export interface SelectedObject {
     key: string
     value: string
   }>
+  timeSeries?: Array<{
+    apiName: string
+    displayName: string
+    unit?: string
+    granularity: 'day' | 'hour'
+    points: Array<{ ts: string; value: number | null }>
+  }>
 }
 
 export interface GraphNodeData {
