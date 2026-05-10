@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import {
-  AlertTriangle,
   ChevronDown,
   CirclePlus,
   ExternalLink,
@@ -11,24 +10,24 @@ import {
   Plus,
   Route,
   Settings,
-  Sparkles,
   SquarePen
 } from 'lucide-vue-next'
-import { computed, ref, watch } from 'vue'
-import type { ObjectType } from '../mock/mock'
-import type { AddObjectPayload, InstanceFilterPayload, SelectedObject } from '../types/graph'
+import { computed, ref } from 'vue'
+import type { ObjectInstance, ObjectType } from '../mock/mock'
+import type { AddObjectPayload, SelectedObject } from '../types/graph'
 import AddObjectDrawer from './AddObjectDrawer.vue'
 import PropertyList from './PropertyList.vue'
+import TimeSeriesChart from './TimeSeriesChart.vue'
 
 const props = defineProps<{
   selectedObject: SelectedObject | null
-  pinnedPropertyApiNames: string[]
   graphStats: {
     objects: number
     nodes: number
     edges: number
   }
   objectTypes: ObjectType[]
+  objectInstances: ObjectInstance[]
   nodeGroups: Array<{
     objectTypeId: string
     displayName: string
@@ -42,8 +41,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: 'dockTool', payload: { tab: string; clientX: number; clientY: number }): void
   (event: 'addToCanvas', payload: AddObjectPayload): void
-  (event: 'applyInstanceFilter', payload: InstanceFilterPayload): void
-  (event: 'togglePinnedProperty', payload: { objectTypeId: string; propertyApiName: string }): void
 }>()
 
 const filterText = ref('')
@@ -54,22 +51,6 @@ const suppressNextTabClick = ref(false)
 const selectedLayerObjectTypeId = ref('object_type_flight')
 const isAddObjectDrawerOpen = ref(false)
 const activeSecondaryTab = ref('Properties')
-const activeAiEventId = ref('')
-const instanceFilterProperty = ref('')
-const instanceFilterValue = ref('')
-const selectedObjectKind = computed(() => props.selectedObject?.nodeKind ?? 'objectInstance')
-const isObjectTypeSelection = computed(() => selectedObjectKind.value === 'objectType')
-const instanceFilterProperties = computed(() => props.selectedObject?.instanceProperties ?? [])
-const instanceCount = computed(() => props.selectedObject?.instances?.length ?? 0)
-const eventCount = computed(() => props.selectedObject?.events?.length ?? 0)
-
-function handleTogglePinnedProperty(propertyApiName: string) {
-  if (!props.selectedObject) {
-    return
-  }
-
-  emit('togglePinnedProperty', { objectTypeId: props.selectedObject.objectTypeId, propertyApiName })
-}
 
 const tabDragState = {
   tab: '',
@@ -144,11 +125,21 @@ function handleTabPointerUp(event: PointerEvent, tab: string) {
   tabDragState.dragging = false
 }
 
-function getNodeGroupIcon(apiName: string) {
-  if (apiName === 'event') {
-    return AlertTriangle
+const timeSeriesRows = computed(() => props.selectedObject?.timeSeries ?? [])
+const planned = computed(() => timeSeriesRows.value.find((row) => row.apiName === 'dailyPlannedQuantity'))
+const actual = computed(() => timeSeriesRows.value.find((row) => row.apiName === 'dailyActualQuantity'))
+const chartSeries = computed(() => {
+  const series = []
+  if (planned.value) {
+    series.push({ key: planned.value.apiName, label: planned.value.displayName, color: '#2563eb', unit: planned.value.unit, points: planned.value.points })
   }
+  if (actual.value) {
+    series.push({ key: actual.value.apiName, label: actual.value.displayName, color: '#7c3aed', unit: actual.value.unit, points: actual.value.points })
+  }
+  return series
+})
 
+function getNodeGroupIcon(apiName: string) {
   return apiName === 'flight' ? Route : MapPin
 }
 
@@ -162,115 +153,12 @@ function openAddObjectDrawer() {
   isAddObjectDrawerOpen.value = true
 }
 
-function handleAddObjectType(payload: AddObjectPayload) {
+function handleAddToCanvas(payload: AddObjectPayload) {
   selectedLayerObjectTypeId.value = payload.objectTypeId
   isAddObjectDrawerOpen.value = false
   emit('addToCanvas', payload)
-  console.log('add objectType drawer payload', payload)
+  console.log('add object drawer payload', payload)
 }
-
-function getEventProperty(event: NonNullable<SelectedObject['events']>[number], key: string) {
-  return event.properties.find((property) => property.key === key)?.value ?? ''
-}
-
-function getEventAiInsight(event: NonNullable<SelectedObject['events']>[number]) {
-  const summary = getEventProperty(event, 'Summary')
-  const severity = getEventProperty(event, 'Severity')
-  const startedAt = getEventProperty(event, 'Started At')
-  const eventType = getEventProperty(event, 'Event Type')
-  const eventTitle = getEventProperty(event, 'Event Title') || event.title
-
-  if (`${eventType} ${summary}`.toLowerCase().includes('pass rate')) {
-    const workstationCode = getEventProperty(event, 'Workstation Code')
-    const passRate = getEventProperty(event, 'Pass Rate Percent')
-    const threshold = getEventProperty(event, 'Threshold Percent')
-
-    return {
-      headline: 'Likely station-level yield degradation',
-      confidence: '79%',
-      basis: `${workstationCode || 'The workstation'} is reporting a ${passRate || 'below-target'}% pass rate against the ${threshold || 'configured'}% threshold, which points to a shared station condition rather than one isolated server failure.`,
-      nextStep: 'Compare all servers assigned to this workstation, then inspect fixture seating, PDU stability, chamber temperature drift, and burn-in profile changes during the affected window.'
-    }
-  }
-
-  if (summary.toLowerCase().includes('ecc')) {
-    return {
-      headline: 'Likely memory stability issue',
-      confidence: '87%',
-      basis: `The failure signature mentions ECC threshold pressure during burn-in. Severity is ${severity || 'elevated'} and the event started at ${startedAt || 'the recorded failure window'}.`,
-      nextStep: 'Rerun memory stress with DIMM slot telemetry enabled, then compare corrected-error counts against adjacent servers in the same workstation.'
-    }
-  }
-
-  if (summary.toLowerCase().includes('pcie')) {
-    return {
-      headline: 'Likely PCIe link instability',
-      confidence: '82%',
-      basis: `The event title "${eventTitle}" and summary both point to GPU PCIe stress instability rather than a generic thermal stop.`,
-      nextStep: 'Check GPU riser seating, PCIe replay counters, and slot power history before rerunning the GPU profile.'
-    }
-  }
-
-  if (summary.toLowerCase().includes('thermal')) {
-    return {
-      headline: 'Likely thermal margin breach',
-      confidence: '84%',
-      basis: `The event reports thermal margin below threshold, which usually indicates airflow, heatsink contact, or workload power excursion during burn-in.`,
-      nextStep: 'Inspect fan curve telemetry, inlet temperature, heatsink pressure, and CPU package power around the failure interval.'
-    }
-  }
-
-  return {
-    headline: 'Likely burn-in profile failure',
-    confidence: '74%',
-    basis: summary || 'The event is marked as failed and linked to this server during the burn-in window.',
-    nextStep: 'Review the failing workload step, recent sensor excursions, and matching events on nearby servers.'
-  }
-}
-
-function askAiAboutEvent(event: NonNullable<SelectedObject['events']>[number]) {
-  activeAiEventId.value = activeAiEventId.value === event.id ? '' : event.id
-  console.log('ask ai about event', event.id)
-}
-
-function syncInstanceFilterControls() {
-  const appliedFilter = props.selectedObject?.appliedInstanceFilter
-  const firstProperty = instanceFilterProperties.value[0]?.apiName ?? ''
-
-  instanceFilterProperty.value = appliedFilter?.propertyApiName ?? firstProperty
-  instanceFilterValue.value = appliedFilter?.value ?? ''
-}
-
-function applyInstanceFilter() {
-  if (!props.selectedObject || !instanceFilterProperty.value) {
-    return
-  }
-
-  emit('applyInstanceFilter', {
-    objectTypeId: props.selectedObject.objectTypeId,
-    propertyApiName: instanceFilterProperty.value,
-    operator: 'equals',
-    value: instanceFilterValue.value.trim()
-  })
-}
-
-watch(
-  () => props.selectedObject?.nodeLabel,
-  () => {
-    if (props.selectedObject) {
-      activePrimaryTab.value = 'Selection'
-    }
-
-    activeSecondaryTab.value =
-      (props.selectedObject?.events?.length ?? 0) > 0
-        ? 'Events'
-        : isObjectTypeSelection.value
-          ? 'Instances'
-          : 'Properties'
-    activeAiEventId.value = ''
-    syncInstanceFilterControls()
-  }
-)
 </script>
 
 <template>
@@ -308,7 +196,7 @@ watch(
           <div class="layers-panel__add">
             <button type="button" @click="openAddObjectDrawer">
               <CirclePlus :size="18" />
-              <span>Add objectType</span>
+              <span>Add object</span>
             </button>
           </div>
 
@@ -377,8 +265,9 @@ watch(
           <AddObjectDrawer
             v-if="isAddObjectDrawerOpen"
             :object-types="objectTypes"
+            :object-instances="objectInstances"
             @close="isAddObjectDrawerOpen = false"
-            @add-to-canvas="handleAddObjectType"
+            @add-to-canvas="handleAddToCanvas"
           />
         </div>
       </template>
@@ -404,36 +293,11 @@ watch(
           </div>
 
           <div class="selection-panel__subtabs">
-            <button
-              v-if="isObjectTypeSelection"
-              class="subtab"
-              :class="{ 'subtab--active': activeSecondaryTab === 'Instances' }"
-              @click="activeSecondaryTab = 'Instances'"
-            >
-              Instances
-              <span class="subtab__badge">{{ instanceCount }}</span>
-            </button>
-            <button
-              class="subtab"
-              :class="{ 'subtab--active': activeSecondaryTab === 'Properties' }"
-              @click="activeSecondaryTab = 'Properties'"
-            >
-              Properties
-            </button>
-            <button
-              class="subtab"
-              :class="{ 'subtab--active': activeSecondaryTab === 'Series' }"
-              @click="activeSecondaryTab = 'Series'"
-            >
-              Series
-            </button>
-            <button
-              class="subtab"
-              :class="{ 'subtab--active': activeSecondaryTab === 'Events' }"
-              @click="activeSecondaryTab = 'Events'"
-            >
+            <button class="subtab" :class="{ 'subtab--active': activeSecondaryTab === 'Properties' }" @click="activeSecondaryTab = 'Properties'">Properties</button>
+            <button class="subtab" :class="{ 'subtab--active': activeSecondaryTab === 'Series' }" @click="activeSecondaryTab = 'Series'">Series</button>
+            <button class="subtab" :class="{ 'subtab--active': activeSecondaryTab === 'Events' }" @click="activeSecondaryTab = 'Events'">
               Events
-              <span class="subtab__badge">{{ eventCount }}</span>
+              <span class="subtab__badge">0</span>
             </button>
           </div>
 
@@ -441,118 +305,29 @@ watch(
             <div class="selection-panel__filter">
               <input v-model="filterText" type="text" placeholder="Filter..." />
             </div>
-
-            <PropertyList
-              :items="selectedObject.properties"
-              :show-pin="isObjectTypeSelection"
-              :pinned-api-names="pinnedPropertyApiNames"
-              :pin-limit="2"
-              @toggle-pin="handleTogglePinnedProperty"
-            />
+            <PropertyList :items="selectedObject.properties" />
+            <button class="selection-panel__add" aria-label="Add property" @click="console.log('add property')">
+              <Plus :size="16" />
+            </button>
           </template>
 
-          <template v-else-if="activeSecondaryTab === 'Instances'">
-            <div class="instance-filter">
-              <select v-model="instanceFilterProperty" aria-label="Instance filter property">
-                <option
-                  v-for="property in instanceFilterProperties"
-                  :key="property.apiName"
-                  :value="property.apiName"
-                >
-                  {{ property.displayName }}
-                </option>
-              </select>
-              <span>equals</span>
-              <input
-                v-model="instanceFilterValue"
-                type="text"
-                placeholder="Value"
-                aria-label="Instance filter value"
-                @keydown.enter="applyInstanceFilter"
-              />
-              <button type="button" :disabled="!instanceFilterProperty" @click="applyInstanceFilter">
-                Apply
-              </button>
+          <template v-else-if="activeSecondaryTab === 'Series'">
+            <div v-if="chartSeries.length" class="series-panel">
+              <div class="series-panel__title">Daily production</div>
+              <TimeSeriesChart :series="chartSeries" :height="180" />
             </div>
-
-            <div v-if="selectedObject.instances?.length" class="instance-list" aria-label="ObjectType instances">
-              <article v-for="instance in selectedObject.instances" :key="instance.id" class="instance-row">
-                <div class="instance-row__icon">
-                  <MapPin :size="16" />
-                </div>
-                <div class="instance-row__copy">
-                  <div class="instance-row__title" :title="instance.title">{{ instance.title }}</div>
-                  <div class="instance-row__subtitle" :title="instance.subtitle">{{ instance.subtitle }}</div>
-                </div>
-              </article>
-            </div>
-
             <div v-else class="selection-panel__empty">
-              <div class="selection-panel__empty-title">No instances</div>
-              <div class="selection-panel__empty-copy">This ObjectType has no instances in the mock dataset.</div>
+              <div class="selection-panel__empty-title">Series</div>
+              <div class="selection-panel__empty-copy">No series configured for this object.</div>
             </div>
           </template>
 
           <template v-else-if="activeSecondaryTab === 'Events'">
-            <div v-if="selectedObject.events?.length" class="event-list" aria-label="Object events">
-              <article v-for="event in selectedObject.events" :key="event.id" class="event-card">
-                <div class="event-card__header">
-                  <div class="event-card__icon">
-                    <AlertTriangle :size="16" />
-                  </div>
-                  <div class="event-card__copy">
-                    <div class="event-card__title">{{ event.title }}</div>
-                    <div class="event-card__subtitle">{{ event.subtitle }}</div>
-                  </div>
-                </div>
-                <PropertyList :items="event.properties" />
-                <div class="event-card__ai-actions">
-                  <button
-                    class="ask-ai-button"
-                    type="button"
-                    :aria-expanded="activeAiEventId === event.id"
-                    @click="askAiAboutEvent(event)"
-                  >
-                    <Sparkles :size="15" />
-                    <span>Ask AI</span>
-                    <ChevronDown :size="14" />
-                  </button>
-                </div>
-                <div v-if="activeAiEventId === event.id" class="ai-insight">
-                  <div class="ai-insight__header">
-                    <Sparkles :size="16" />
-                    <span>AI root-cause read</span>
-                    <strong>{{ getEventAiInsight(event).confidence }}</strong>
-                  </div>
-                  <div class="ai-insight__headline">{{ getEventAiInsight(event).headline }}</div>
-                  <p>{{ getEventAiInsight(event).basis }}</p>
-                  <div class="ai-insight__next">
-                    <span>Next check</span>
-                    {{ getEventAiInsight(event).nextStep }}
-                  </div>
-                </div>
-              </article>
-            </div>
-
-            <div v-else class="selection-panel__empty">
-              <div class="selection-panel__empty-title">No events</div>
-              <div class="selection-panel__empty-copy">This object has no related burn-in failure events.</div>
+            <div class="selection-panel__empty">
+              <div class="selection-panel__empty-title">Events</div>
+              <div class="selection-panel__empty-copy">No events for this object.</div>
             </div>
           </template>
-
-          <div v-else class="selection-panel__empty">
-            <div class="selection-panel__empty-title">Series</div>
-            <div class="selection-panel__empty-copy">No series configured for this object.</div>
-          </div>
-
-          <button
-            v-if="activeSecondaryTab === 'Properties'"
-            class="selection-panel__add"
-            aria-label="Add property"
-            @click="console.log('add property')"
-          >
-            <Plus :size="16" />
-          </button>
         </template>
 
         <div v-else class="selection-panel__empty">
@@ -568,3 +343,15 @@ watch(
     </template>
   </aside>
 </template>
+
+<style scoped>
+.series-panel {
+  padding: 12px 12px 16px;
+  display: grid;
+  gap: 10px;
+}
+.series-panel__title {
+  font-size: 12px;
+  color: #6b7280;
+}
+</style>
