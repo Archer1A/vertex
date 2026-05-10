@@ -3,11 +3,13 @@ import { computed, ref } from 'vue'
 import TopBar from './components/TopBar.vue'
 import SheetBar from './components/SheetBar.vue'
 import GraphCanvas from './components/GraphCanvas.vue'
+import FlowCanvas from './components/FlowCanvas.vue'
 
 const sheets = ref(['Sheet 1', 'Sheet 2'])
 const activeSheet = ref('Sheet 1')
 
 const activeSheetIndex = computed(() => sheets.value.indexOf(activeSheet.value))
+const isFlowSheet = computed(() => activeSheet.value === 'Sheet 2')
 
 function selectSheet(sheet: string) {
   activeSheet.value = sheet
@@ -29,5 +31,6 @@ function addSheet() {
     @select-sheet="selectSheet"
     @add-sheet="addSheet"
   />
-  <GraphCanvas :active-sheet-index="activeSheetIndex" />
+  <FlowCanvas v-if="isFlowSheet" :key="`flow-${activeSheet}`" />
+  <GraphCanvas v-else :key="`graph-${activeSheet}`" :active-sheet-index="activeSheetIndex" />
 </template>

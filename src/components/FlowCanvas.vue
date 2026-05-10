@@ -21,7 +21,7 @@ const PAD_Y = 24
 const expandedByKey = ref<Record<string, boolean>>({})
 
 function isExpanded(key: string) {
-  return expandedByKey.value[key] ?? true
+  return expandedByKey.value[key] ?? false
 }
 
 function setExpanded(key: string, open: boolean) {
