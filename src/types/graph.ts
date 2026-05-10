@@ -9,6 +9,7 @@ export interface SelectedObject {
   properties: Array<{
     key: string
     value: string
+    apiName?: string
   }>
   instanceProperties?: Array<{
     apiName: string
@@ -39,6 +40,7 @@ export interface GraphNodeData {
   type: 'airport' | 'flight' | 'event'
   objectTypeId: string
   instance: ObjectInstance
+  eventIds?: string[]
   x: number
   y: number
 }
@@ -48,6 +50,10 @@ export interface GraphNodeDisplayData {
   subtitle: string
   accentColor: string
   icon: 'airport' | 'flight' | 'event'
+  chips?: Array<{
+    key: string
+    value: string
+  }>
   metrics: Array<{
     label: string
     value: string

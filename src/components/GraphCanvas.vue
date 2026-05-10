@@ -12,10 +12,10 @@ import type {
 } from '../types/graph'
 import { groupNodesByIds } from '../utils/graphGrouping'
 import {
-  eventInstances,
-  flightInstances,
   getLinkTypeById,
   getObjectTypeById,
+  getEventBadgeColor,
+  getEventsForObjectInstance,
   linkTypes,
   linkInstances,
   objectInstances,
@@ -54,28 +54,7 @@ const expandedEdgeInstanceIdsByObjectTypeNodeId = new Map<string, Set<string>>()
 const graphNodes = reactive<GraphNodeData[]>([])
 const graphEdges = reactive<GraphEdgeData[]>([])
 
-const airportPositions: Record<string, { x: number; y: number }> = {
-  SFO: { x: 56, y: 58 },
-  LAX: { x: 46, y: 62 },
-  SEA: { x: 52, y: 38 },
-  JFK: { x: 70, y: 48 }
-}
-
-const flightPositions: Record<string, { x: number; y: number }> = {
-  'UA1175-2026-04-25': { x: 58, y: 44 },
-  'UA2381-2026-04-25': { x: 62, y: 38 },
-  'DL421-2026-04-25': { x: 64, y: 58 },
-  'AS330-2026-04-25': { x: 50, y: 50 },
-  'B6401-2026-04-25': { x: 74, y: 54 },
-  'AA1846-2026-04-25': { x: 52, y: 66 }
-}
-
-const eventPositions: Record<string, { x: number; y: number }> = {
-  event_burnin_failure_server02: { x: 64, y: 30 },
-  event_burnin_failure_server05: { x: 78, y: 48 },
-  event_burnin_failure_server06: { x: 74, y: 64 },
-  event_low_pass_rate_workstation2: { x: 63, y: 55 }
-}
+const pinnedPropertyApiNamesByObjectTypeId = reactive<Record<string, string[]>>({})
 
 const panelPosition = reactive({ x: 8, y: 8 })
 const dragState = reactive({
@@ -147,6 +126,12 @@ const canGroupSelectedNodes = computed(() => {
 
 const selectedObjectForPanel = computed<SelectedObject | null>(() => {
   return selectedGraphNode.value ? toSelectedObject(selectedGraphNode.value) : null
+})
+
+const pinnedPropertyApiNamesForPanel = computed(() => {
+  const objectTypeId = selectedObjectForPanel.value?.objectTypeId
+  if (!objectTypeId) return []
+  return pinnedPropertyApiNamesByObjectTypeId[objectTypeId] ?? []
 })
 
 const searchAroundStartNode = computed(() => {
@@ -279,22 +264,12 @@ function clampPercent(value: number, min: number, max: number) {
 }
 
 function getDefaultNodePosition(instance: ObjectInstance, index: number) {
-  const airportCode = toDisplayString(instance.properties.airport)
-  const flightId = toDisplayString(instance.properties.flightId)
+  void instance
   const fallbackPosition = {
     x: 48 + (index % 4) * 8,
     y: 42 + Math.floor(index / 4) * 10
   }
-
-  if (instance.objectTypeId === 'object_type_airport') {
-    return airportPositions[airportCode] ?? fallbackPosition
-  }
-
-  if (instance.objectTypeId === 'object_type_event') {
-    return eventPositions[instance.id] ?? fallbackPosition
-  }
-
-  return flightPositions[flightId] ?? fallbackPosition
+  return fallbackPosition
 }
 
 function getAnchoredNodePosition(anchor: GraphNodeData, index: number, total: number) {
@@ -309,6 +284,7 @@ function getAnchoredNodePosition(anchor: GraphNodeData, index: number, total: nu
 
 function createGraphNode(instance: ObjectInstance, index: number, anchor?: GraphNodeData, total = 1): GraphNodeData {
   const position = anchor ? getAnchoredNodePosition(anchor, index, total) : getDefaultNodePosition(instance, graphNodes.length + index)
+  const relatedEvents = getEventsForObjectInstance(instance.id)
 
   return {
     id: instance.id,
@@ -317,6 +293,7 @@ function createGraphNode(instance: ObjectInstance, index: number, anchor?: Graph
     type: getNodeType(instance.objectTypeId),
     objectTypeId: instance.objectTypeId,
     instance,
+    eventIds: relatedEvents.map((event) => event.id),
     x: position.x,
     y: position.y
   }
@@ -352,15 +329,9 @@ function createObjectTypeGraphNode(payload: AddObjectTypePayload): GraphNodeData
 }
 
 function getNodeType(objectTypeId: string): GraphNodeData['type'] {
-  if (objectTypeId === 'object_type_airport') {
-    return 'airport'
-  }
-
-  if (objectTypeId === 'object_type_event') {
-    return 'event'
-  }
-
-  return 'flight'
+  if (objectTypeId === 'object_type_production_order') return 'flight'
+  if (objectTypeId === 'object_type_material_demand') return 'event'
+  return 'airport'
 }
 
 function addNodeIfMissing(instance: ObjectInstance, index: number, anchor?: GraphNodeData, total = 1) {
@@ -421,7 +392,8 @@ function toSelectedObject(node: GraphNodeData): SelectedObject {
     const properties =
       objectType?.properties.map((property) => ({
         key: property.displayName,
-        value: `${property.baseType}${property.required ? ' required' : ''}`
+        value: `${property.baseType}${property.required ? ' required' : ''}`,
+        apiName: property.apiName
       })) ?? []
 
     return {
@@ -441,8 +413,31 @@ function toSelectedObject(node: GraphNodeData): SelectedObject {
   const properties =
     objectType?.properties.map((property) => ({
       key: property.displayName,
-      value: getInstancePropertyText(node.instance, property)
+      value: getInstancePropertyText(node.instance, property),
+      apiName: property.apiName
     })) ?? []
+
+  const toText = (value: unknown) => (value === null || value === undefined ? '' : String(value))
+  const relatedEvents = getEventsForObjectInstance(node.id)
+  const events: NonNullable<SelectedObject['events']> = relatedEvents.map((eventInstance) => {
+    const properties = eventInstance.properties ?? {}
+    const title = toText(properties.event_title || properties.event_id || eventInstance.id)
+    const severity = toText(properties.severity)
+    const subtitle = severity ? `Severity: ${severity}` : 'Event'
+
+    return {
+      id: eventInstance.id,
+      title,
+      subtitle,
+      properties: [
+        { key: 'Event Title', value: title },
+        { key: 'Event Type', value: toText(properties.event_type) },
+        { key: 'Severity', value: severity },
+        { key: 'Started At', value: toText(properties.event_time) },
+        { key: 'Summary', value: toText(properties.event_summary) }
+      ].filter((item) => item.value.trim() !== '')
+    }
+  })
 
   return {
     title: node.label,
@@ -451,155 +446,35 @@ function toSelectedObject(node: GraphNodeData): SelectedObject {
     nodeKind: node.nodeKind,
     objectTypeId: node.objectTypeId,
     properties,
-    events: getRelatedEventsForSelectedObject(node)
+    events
   }
-}
-
-function mapEventsForSelection(events: ObjectInstance[]): SelectedObject['events'] {
-  return events.map((event) => {
-    const eventObjectType = getObjectTypeById(event.objectTypeId)
-    const eventProperties =
-      eventObjectType?.properties.map((property) => ({
-        key: property.displayName,
-        value: getInstancePropertyText(event, property)
-      })) ?? []
-    const severity = toDisplayString(event.properties.severity)
-    const startedAt = toDisplayString(event.properties.startedAt)
-
-    return {
-      id: event.id,
-      title: toDisplayString(event.properties.eventTitle) || event.id,
-      subtitle: [severity, startedAt].filter(Boolean).join(' - '),
-      properties: eventProperties
-    }
-  })
-}
-
-function getRelatedEventsForSelectedObject(node: GraphNodeData): SelectedObject['events'] {
-  if (node.nodeKind === 'objectType') {
-    return []
-  }
-
-  if (node.objectTypeId === 'object_type_flight') {
-    return mapEventsForSelection(getFailureEventsByServerId(toDisplayString(node.instance.properties.flightId)))
-  }
-
-  if (node.objectTypeId === 'object_type_airport') {
-    return mapEventsForSelection(getWorkstationEventsByCode(toDisplayString(node.instance.properties.airport)))
-  }
-
-  return []
 }
 
 function countLinkedObjects(node: GraphNodeData, linkType: LinkType) {
-  if (node.nodeKind === 'objectType') {
-    return 0
-  }
-
-  if (linkType.apiName === 'serverFailureEvent') {
-    if (node.objectTypeId === 'object_type_flight') {
-      return getFailureEventsByServerId(toDisplayString(node.instance.properties.flightId)).length
-    }
-
-    if (node.objectTypeId === 'object_type_event') {
-      return findServerById(node.instance.properties.serverId) ? 1 : 0
-    }
-
-    return 0
-  }
-
-  if (linkType.apiName === 'workstationPassRateEvent') {
-    if (node.objectTypeId === 'object_type_airport') {
-      return getWorkstationEventsByCode(toDisplayString(node.instance.properties.airport)).length
-    }
-
-    if (node.objectTypeId === 'object_type_event') {
-      return findAirportByCode(node.instance.properties.workstationCode) ? 1 : 0
-    }
-
-    return 1
-  }
-
-  if (node.objectTypeId === 'object_type_airport') {
-    const airportCode = toDisplayString(node.instance.properties.airport)
-
-    if (linkType.apiName === 'flightDestinationAirport') {
-      return flightInstances.filter((flight) => toDisplayString(flight.properties.destinationAirportCode) === airportCode).length
-    }
-
-    return flightInstances.filter((flight) => toDisplayString(flight.properties.originAirportCode) === airportCode).length
-  }
-
-  return 1
-}
-
-function getFailureEventsByServerId(serverId: string) {
-  return eventInstances.filter((event) => {
-    return (
-      toDisplayString(event.properties.serverId) === serverId &&
-      toDisplayString(event.properties.eventStatus) === 'Failed'
-    )
-  })
-}
-
-function getWorkstationEventsByCode(workstationCode: string) {
-  return eventInstances.filter((event) => {
-    return toDisplayString(event.properties.workstationCode) === workstationCode
-  })
-}
-
-function findServerById(serverId: PropertyValue) {
-  const resolvedServerId = toDisplayString(serverId)
-
-  return objectInstances.find((instance) => {
-    return instance.objectTypeId === 'object_type_flight' && toDisplayString(instance.properties.flightId) === resolvedServerId
-  })
-}
-
-function findAirportByCode(code: PropertyValue) {
-  const airportCode = toDisplayString(code)
-
-  return objectInstances.find((instance) => {
-    return instance.objectTypeId === 'object_type_airport' && toDisplayString(instance.properties.airport) === airportCode
-  })
+  if (node.nodeKind === 'objectType') return 0
+  return getRelatedInstances(node, linkType).length
 }
 
 function getRelatedInstances(startNode: GraphNodeData, linkType: LinkType) {
-  if (linkType.apiName === 'serverFailureEvent') {
-    if (startNode.objectTypeId === 'object_type_flight') {
-      return getFailureEventsByServerId(toDisplayString(startNode.instance.properties.flightId))
-    }
+  if (startNode.nodeKind === 'objectType') return []
 
-    const server = findServerById(startNode.instance.properties.serverId)
-    return server ? [server] : []
-  }
+  const isSource = startNode.objectTypeId === linkType.sourceObjectTypeId
+  const isTarget = startNode.objectTypeId === linkType.targetObjectTypeId
 
-  if (linkType.apiName === 'workstationPassRateEvent') {
-    if (startNode.objectTypeId === 'object_type_airport') {
-      return getWorkstationEventsByCode(toDisplayString(startNode.instance.properties.airport))
-    }
+  if (!isSource && !isTarget) return []
 
-    const workstation = findAirportByCode(startNode.instance.properties.workstationCode)
-    return workstation ? [workstation] : []
-  }
+  const relatedIds = new Set(
+    linkInstances
+      .filter((linkInstance) => {
+        if (linkInstance.linkTypeId !== linkType.id) return false
+        return isSource
+          ? linkInstance.sourceObjectInstanceId === startNode.id
+          : linkInstance.targetObjectInstanceId === startNode.id
+      })
+      .map((linkInstance) => (isSource ? linkInstance.targetObjectInstanceId : linkInstance.sourceObjectInstanceId))
+  )
 
-  if (startNode.objectTypeId === 'object_type_airport') {
-    const airportCode = toDisplayString(startNode.instance.properties.airport)
-
-    if (linkType.apiName === 'flightDestinationAirport') {
-      return flightInstances.filter((flight) => toDisplayString(flight.properties.destinationAirportCode) === airportCode)
-    }
-
-    return flightInstances.filter((flight) => toDisplayString(flight.properties.originAirportCode) === airportCode)
-  }
-
-  const airportCode =
-    linkType.apiName === 'flightDestinationAirport'
-      ? startNode.instance.properties.destinationAirportCode
-      : startNode.instance.properties.originAirportCode
-  const airport = findAirportByCode(airportCode)
-
-  return airport ? [airport] : []
+  return objectInstances.filter((instance) => relatedIds.has(instance.id))
 }
 
 function createRelationshipEdge(startNode: GraphNodeData, resultNode: GraphNodeData, linkType: LinkType): GraphEdgeData | null {
@@ -637,35 +512,18 @@ function createObjectTypeRelationshipEdge(startNode: GraphNodeData, resultNode: 
 }
 
 function getRelationshipLabel(linkType: LinkType) {
-  if (linkType.apiName === 'serverFailureEvent' || linkType.apiName === 'workstationPassRateEvent') {
-    return 'event'
-  }
-
-  return linkType.apiName === 'flightDestinationAirport' ? 'destination' : 'origin'
+  return linkType.displayName || linkType.apiName
 }
 
 function getNodeEventCount(node: GraphNodeData) {
-  if (node.nodeKind === 'objectType') {
-    return 0
-  }
-
-  if (node.objectTypeId === 'object_type_flight') {
-    return getFailureEventsByServerId(toDisplayString(node.instance.properties.flightId)).length
-  }
-
-  if (node.objectTypeId === 'object_type_airport') {
-    return getWorkstationEventsByCode(toDisplayString(node.instance.properties.airport)).length
-  }
-
-  return 0
+  if (node.nodeKind === 'objectType') return 0
+  return node.eventIds?.length ?? getEventsForObjectInstance(node.id).length
 }
 
-function getPropertyText(node: GraphNodeData, propertyApiName: string) {
-  if (node.nodeKind === 'objectType') {
-    return ''
-  }
-
-  return toDisplayString(node.instance.properties[propertyApiName])
+function getNodeEventBadgeColor(node: GraphNodeData) {
+  if (node.nodeKind === 'objectType') return undefined
+  const events = getEventsForObjectInstance(node.id)
+  return events.length ? getEventBadgeColor(events[0]) : undefined
 }
 
 function displayOrDash(value: string) {
@@ -718,7 +576,6 @@ function getNodeDisplayData(node: GraphNodeData): GraphNodeDisplayData {
   const objectType = getObjectTypeById(node.objectTypeId)
   const title = node.label
   const subtitle = node.nodeKind === 'objectType' ? 'ObjectType' : objectType?.displayName ?? node.objectTypeId
-  const eventCount = getNodeEventCount(node)
   const accentColor = objectType?.color ?? (node.type === 'flight' ? '#2563eb' : node.type === 'event' ? '#dc2626' : '#8b3f9f')
 
   if (node.nodeKind === 'objectType') {
@@ -745,72 +602,78 @@ function getNodeDisplayData(node: GraphNodeData): GraphNodeDisplayData {
     }
   }
 
-  if (node.objectTypeId === 'object_type_airport') {
-    const activeServers = getPropertyText(node, 'activeServers')
-    const rackCapacity = getPropertyText(node, 'rackCapacity')
-    const measuredTemperatureC = getPropertyText(node, 'measuredTemperatureC')
+  const pinnedApiNames = pinnedPropertyApiNamesByObjectTypeId[node.objectTypeId] ?? []
+  const chips =
+    pinnedApiNames
+      .map((apiName) => {
+        const property = objectType?.properties.find((candidate) => candidate.apiName === apiName)
+        if (!property) {
+          return null
+        }
 
-    return {
-      title,
-      subtitle,
-      accentColor,
-      icon: node.type,
-      metrics: [
-        metric('Servers', activeServers && rackCapacity ? `${activeServers}/${rackCapacity}` : activeServers, 'Active servers over rack capacity'),
-        metric('Temp', measuredTemperatureC ? `${measuredTemperatureC}C` : '', 'Measured temperature C'),
-        metric('Events', String(eventCount), 'Related event count')
-      ],
-      badges: compactBadgeList([
-        badge(getPropertyText(node, 'stationStatus')),
-        badge(getPropertyText(node, 'burnInProfile'), 'info')
-      ])
-    }
+        return {
+          key: property.displayName,
+          value: getInstancePropertyText(node.instance, property)
+        }
+      })
+      .filter((chip): chip is NonNullable<typeof chip> => chip !== null)
+      .slice(0, 2)
+
+  const statusProperty = objectType?.properties.find((property) => property.apiName.toLowerCase().includes('status'))
+  const quantityProperty = objectType?.properties.find((property) => property.apiName.toLowerCase().includes('quantity'))
+  const dateProperty = objectType?.properties.find((property) => property.baseType === 'date' || property.baseType === 'datetime')
+  const primaryKeyProperty = objectType?.properties.find((property) => property.id === objectType.primaryKeyPropertyId)
+
+  const instanceMetrics: GraphNodeDisplayData['metrics'] = []
+
+  if (quantityProperty) {
+    instanceMetrics.push(metric(quantityProperty.displayName, getInstancePropertyText(node.instance, quantityProperty), quantityProperty.apiName))
   }
 
-  if (node.objectTypeId === 'object_type_flight') {
-    const thermalMarginC = getPropertyText(node, 'delayMinutes')
-    const badges = [
-      badge(getPropertyText(node, 'serverModel'), 'neutral'),
-      badge(getPropertyText(node, 'gate'), 'info')
-    ]
-
-    if (getPropertyText(node, 'isCancelled') === 'true') {
-      badges.push(badge('Quarantined', 'danger'))
-    }
-
-    return {
-      title,
-      subtitle,
-      accentColor,
-      icon: node.type,
-      metrics: [
-        metric('Status', getPropertyText(node, 'flightStatus'), 'Burn-in status'),
-        metric('Thermal', thermalMarginC ? `${thermalMarginC}C` : '', 'Thermal margin C'),
-        metric('Events', String(eventCount), 'Failure event count')
-      ],
-      badges: compactBadgeList(badges)
-    }
+  if (statusProperty) {
+    instanceMetrics.push(metric(statusProperty.displayName, getInstancePropertyText(node.instance, statusProperty), statusProperty.apiName))
   }
 
-  const passRatePercent = getPropertyText(node, 'passRatePercent')
-  const durationMinutes = getPropertyText(node, 'durationMinutes')
-  const associatedObject = getPropertyText(node, 'serverId') || getPropertyText(node, 'workstationCode')
+  if (dateProperty) {
+    instanceMetrics.push(metric(dateProperty.displayName, getInstancePropertyText(node.instance, dateProperty), dateProperty.apiName))
+  }
+
+  if (instanceMetrics.length === 0 && primaryKeyProperty) {
+    instanceMetrics.push(metric(primaryKeyProperty.displayName, getInstancePropertyText(node.instance, primaryKeyProperty), primaryKeyProperty.apiName))
+  }
 
   return {
     title,
     subtitle,
     accentColor,
     icon: node.type,
-    metrics: [
-      metric('Severity', getPropertyText(node, 'severity'), 'Event severity'),
-      metric(passRatePercent ? 'Pass Rate' : 'Duration', passRatePercent ? `${passRatePercent}%` : `${durationMinutes}m`, passRatePercent ? 'Pass rate percent' : 'Duration minutes'),
-      metric('Status', getPropertyText(node, 'eventStatus'), 'Event status')
-    ],
+    chips: chips.length ? chips : undefined,
+    metrics: instanceMetrics.slice(0, 3),
     badges: compactBadgeList([
-      badge(getPropertyText(node, 'eventType'), 'info'),
-      badge(associatedObject, 'neutral')
+      badge(statusProperty ? getInstancePropertyText(node.instance, statusProperty) : '-', 'neutral'),
+      badge(objectType?.apiName ?? node.objectTypeId, 'info'),
+      badge(node.instance.id, 'neutral')
     ])
   }
+}
+
+function handleTogglePinnedProperty(payload: { objectTypeId: string; propertyApiName: string }) {
+  const current = pinnedPropertyApiNamesByObjectTypeId[payload.objectTypeId] ?? []
+  const existsIndex = current.indexOf(payload.propertyApiName)
+
+  if (existsIndex >= 0) {
+    pinnedPropertyApiNamesByObjectTypeId[payload.objectTypeId] = current.filter((item) => item !== payload.propertyApiName)
+    console.log('unpin node property', payload)
+    return
+  }
+
+  if (current.length >= 2) {
+    console.log('node property pin limit reached (max 2)', payload)
+    return
+  }
+
+  pinnedPropertyApiNamesByObjectTypeId[payload.objectTypeId] = [...current, payload.propertyApiName]
+  console.log('pin node property', payload)
 }
 
 function addEdgeIfMissing(edge: GraphEdgeData | null) {
@@ -1384,6 +1247,7 @@ onBeforeUnmount(() => {
     <div class="graph-canvas__grid" aria-hidden="true"></div>
     <LeftSelectionPanel
       :selected-object="selectedObjectForPanel"
+      :pinned-property-api-names="pinnedPropertyApiNamesForPanel"
       :graph-stats="graphStats"
       :object-types="objectTypes"
       :node-groups="nodeGroups"
@@ -1392,6 +1256,7 @@ onBeforeUnmount(() => {
       @dock-tool="handleDockTool"
       @add-to-canvas="handleAddObjectsToCanvas"
       @apply-instance-filter="handleApplyInstanceFilter"
+      @toggle-pinned-property="handleTogglePinnedProperty"
       @click="handlePanelClick"
     />
     <MainToolbar
@@ -1461,6 +1326,7 @@ onBeforeUnmount(() => {
       :is-selected="selectedNodeIds.includes(node.id)"
       :is-dragging="dragState.dragging && dragState.nodeId === node.id"
       :event-count="getNodeEventCount(node)"
+      :event-badge-color="getNodeEventBadgeColor(node)"
       @pointerdown="handleNodePointerDown($event, node.id)"
       @pointermove="handleNodePointerMove"
       @pointerup="handleNodePointerUp"

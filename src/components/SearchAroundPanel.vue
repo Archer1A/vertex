@@ -17,11 +17,10 @@ import {
   X
 } from 'lucide-vue-next'
 import {
-  airportInstances,
-  eventInstances,
-  flightInstances,
   getObjectTypeById,
+  linkInstances,
   linkTypes,
+  objectInstances,
   type LinkType,
   type ObjectInstance,
   type PropertyValue,
@@ -69,62 +68,34 @@ const resultObjectType = computed(() => {
 
 const filterProperties = computed(() => resultObjectType.value?.properties.filter((property) => property.filterable) ?? [])
 
-const selectedAirportCode = computed(() => {
-  return toDisplayString(props.startingInstance.properties.airport)
-})
+function getRelatedInstanceIds(startInstanceId: string, linkType: LinkType) {
+  const isSource = props.startingObjectTypeId === linkType.sourceObjectTypeId
+  const isTarget = props.startingObjectTypeId === linkType.targetObjectTypeId
 
-const selectedFlightId = computed(() => {
-  return toDisplayString(props.startingInstance.properties.flightId)
-})
+  if (!isSource && !isTarget) {
+    return []
+  }
 
-const selectedEventServerId = computed(() => {
-  return toDisplayString(props.startingInstance.properties.serverId)
-})
-
-const selectedEventWorkstationCode = computed(() => {
-  return toDisplayString(props.startingInstance.properties.workstationCode)
-})
+  return linkInstances
+    .filter((linkInstance) => {
+      if (linkInstance.linkTypeId !== linkType.id) return false
+      return isSource ? linkInstance.sourceObjectInstanceId === startInstanceId : linkInstance.targetObjectInstanceId === startInstanceId
+    })
+    .map((linkInstance) => (isSource ? linkInstance.targetObjectInstanceId : linkInstance.sourceObjectInstanceId))
+}
 
 const resultInstances = computed(() => {
   if (!selectedLinkType.value) {
     return []
   }
 
-  if (selectedLinkType.value.apiName === 'serverFailureEvent') {
-    if (props.startingObjectTypeId === 'object_type_flight') {
-      return eventInstances.filter((event) => {
-        return event.properties.serverId === selectedFlightId.value && event.properties.eventStatus === 'Failed'
-      })
-    }
+  const resultObjectTypeId =
+    selectedLinkType.value.sourceObjectTypeId === props.startingObjectTypeId
+      ? selectedLinkType.value.targetObjectTypeId
+      : selectedLinkType.value.sourceObjectTypeId
 
-    return flightInstances.filter((flight) => flight.properties.flightId === selectedEventServerId.value)
-  }
-
-  if (selectedLinkType.value.apiName === 'workstationPassRateEvent') {
-    if (props.startingObjectTypeId === 'object_type_airport') {
-      return eventInstances.filter((event) => {
-        return event.properties.workstationCode === selectedAirportCode.value
-      })
-    }
-
-    return airportInstances.filter((airport) => airport.properties.airport === selectedEventWorkstationCode.value)
-  }
-
-  if (props.startingObjectTypeId === 'object_type_flight') {
-    const flight = flightInstances.find((instance) => instance.properties.flightId === selectedFlightId.value)
-    const airportCode =
-      selectedLinkType.value.apiName === 'flightDestinationAirport'
-        ? flight?.properties.destinationAirportCode
-        : flight?.properties.originAirportCode
-
-    return airportInstances.filter((airport) => airport.properties.airport === airportCode)
-  }
-
-  if (selectedLinkType.value.apiName === 'flightDestinationAirport') {
-    return flightInstances.filter((flight) => flight.properties.destinationAirportCode === selectedAirportCode.value)
-  }
-
-  return flightInstances.filter((flight) => flight.properties.originAirportCode === selectedAirportCode.value)
+  const relatedIds = new Set(getRelatedInstanceIds(props.startingInstance.id, selectedLinkType.value))
+  return objectInstances.filter((instance) => instance.objectTypeId === resultObjectTypeId && relatedIds.has(instance.id))
 })
 
 const filteredProperties = computed(() => {
