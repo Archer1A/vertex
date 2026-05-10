@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   AlertTriangle,
   ArrowRight,
@@ -11,6 +11,7 @@ import {
   PackageOpen,
   Plus,
   Search,
+  Sparkles,
   X
 } from 'lucide-vue-next'
 import MetricsChartWidget from './MetricsChartWidget.vue'
@@ -726,10 +727,144 @@ const headerTrail = computed(() => {
     { label: 'Metrics', icon: BarChart3 }
   ]
 })
+
+type ChatRole = 'assistant' | 'user'
+type ChatMessage = {
+  id: string
+  role: ChatRole
+  content: string
+  timestamp: number
+}
+
+const chatThreadRef = ref<HTMLElement | null>(null)
+const chatInputRef = ref<HTMLTextAreaElement | null>(null)
+const chatDraft = ref('')
+const chatIsBusy = ref(false)
+const promptChips = ['Summarize these metrics', 'Highlight anomalies', 'Explain a selected row', 'Suggest next actions']
+
+const chatMessages = ref<ChatMessage[]>([
+  {
+    id: 'ai-hello',
+    role: 'assistant',
+    content: 'AI chat prototype (no backend). Ask questions about the selected object, KPI cards, or table rows.',
+    timestamp: Date.now()
+  }
+])
+
+function makeChatId(prefix: string) {
+  return `${prefix}-${Math.random().toString(16).slice(2)}-${Date.now()}`
+}
+
+function scrollChatToBottom() {
+  const el = chatThreadRef.value
+  if (!el) return
+  el.scrollTop = el.scrollHeight
+}
+
+watch(
+  () => chatMessages.value.length,
+  async () => {
+    await nextTick()
+    scrollChatToBottom()
+  }
+)
+
+function buildMockReply(prompt: string) {
+  const focus = headerTitle.value
+  const kpis = metricCards.value
+    .slice(0, 3)
+    .map((card) => `${card.label}: ${card.value}`)
+    .join(' · ')
+
+  const lower = prompt.toLowerCase()
+  if (lower.includes('anomal') || lower.includes('risk')) {
+    return `Prototype insight for “${focus}”: scan the Data table for outliers and confirm upstream refresh cadence. Current KPIs: ${kpis || 'N/A'}.`
+  }
+  if (lower.includes('summar') || lower.includes('overview')) {
+    return `Summary for “${focus}”: KPIs and charts are on the left, with drill-down rows in Data. Current KPIs: ${kpis || 'N/A'}.`
+  }
+  if (lower.includes('next') || lower.includes('action')) {
+    return `Next actions (prototype): validate top KPI drivers, filter Data by status/date, then compare linked objects (demands/materials/plants) for dependency risk.`
+  }
+
+  return `Got it (prototype). Try: “Summarize these metrics”, “Highlight anomalies”, or “Suggest next actions”.`
+}
+
+async function sendChatMessage(nextText?: string) {
+  const text = (nextText ?? chatDraft.value).trim()
+  if (!text || chatIsBusy.value) return
+
+  chatDraft.value = ''
+  chatIsBusy.value = true
+
+  chatMessages.value.push({
+    id: makeChatId('user'),
+    role: 'user',
+    content: text,
+    timestamp: Date.now()
+  })
+
+  const assistantId = makeChatId('ai')
+  chatMessages.value.push({
+    id: assistantId,
+    role: 'assistant',
+    content: 'Thinking…',
+    timestamp: Date.now()
+  })
+
+  window.setTimeout(() => {
+    const index = chatMessages.value.findIndex((msg) => msg.id === assistantId)
+    if (index >= 0) {
+      chatMessages.value[index] = { ...chatMessages.value[index], content: buildMockReply(text) }
+    }
+    chatIsBusy.value = false
+  }, 520)
+
+  await nextTick()
+  chatInputRef.value?.focus()
+}
+
+function handleChatKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Enter') return
+  if (event.shiftKey) return
+  event.preventDefault()
+  void sendChatMessage()
+}
+
+function handleChipClick(chip: string) {
+  chatDraft.value = chip
+  void nextTick(() => chatInputRef.value?.focus())
+}
+
+function clearChat() {
+  console.log('metric-ai:chat:clear')
+  chatMessages.value = [
+    {
+      id: 'ai-hello',
+      role: 'assistant',
+      content: 'AI chat prototype (no backend). Ask questions about the selected object, KPI cards, or table rows.',
+      timestamp: Date.now()
+    }
+  ]
+}
+
+const globalKeyHandler = (event: KeyboardEvent) => {
+  if (event.key === 'Escape' && isCreateOpen.value) {
+    closeCreatePanel()
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', globalKeyHandler)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', globalKeyHandler)
+})
 </script>
 
 <template>
-  <aside class="metrics-panel" aria-label="Metrics" @click.stop>
+  <aside class="metrics-panel metric-ai-panel" aria-label="Metrics" @click.stop>
     <header class="metrics-panel__header">
       <div class="metrics-panel__title">
         <span class="metrics-panel__title-icon">
@@ -758,7 +893,7 @@ const headerTrail = computed(() => {
       </button>
     </header>
 
-    <div :class="['metrics-panel__body', { 'metrics-panel__body--create-open': isCreateOpen }]">
+    <div class="metric-ai-panel__body">
       <div class="metrics-panel__main">
         <section class="metrics-panel__cards" aria-label="Metric cards">
         <div class="metrics-panel__cards-head">
@@ -887,8 +1022,79 @@ const headerTrail = computed(() => {
         </section>
       </div>
 
+      <aside class="metric-ai-chat" aria-label="AI chat" @click.stop>
+        <header class="metric-ai-chat__header">
+          <div class="metric-ai-chat__title">
+            <span class="metric-ai-chat__icon" aria-hidden="true">
+              <Sparkles :size="16" />
+            </span>
+            <div class="metric-ai-chat__title-copy">
+              <div class="metric-ai-chat__title-row">
+                <span>AI Assistant</span>
+                <span class="metric-ai-chat__pill">Prototype</span>
+              </div>
+              <div class="metric-ai-chat__subtitle">Mock responses · No backend connected</div>
+            </div>
+          </div>
+
+          <button class="metric-ai-chat__clear" type="button" aria-label="Clear chat" @click="clearChat">
+            <X :size="16" />
+          </button>
+        </header>
+
+        <div class="metric-ai-chat__chips" aria-label="Suggested prompts">
+          <button
+            v-for="chip in promptChips"
+            :key="chip"
+            class="metric-ai-chat__chip"
+            type="button"
+            @click="handleChipClick(chip)"
+          >
+            {{ chip }}
+          </button>
+        </div>
+
+        <div ref="chatThreadRef" class="metric-ai-chat__thread" aria-label="Chat messages">
+          <div
+            v-for="msg in chatMessages"
+            :key="msg.id"
+            class="metric-ai-chat__msg"
+            :class="msg.role === 'user' ? 'metric-ai-chat__msg--user' : 'metric-ai-chat__msg--ai'"
+          >
+            <div class="metric-ai-chat__avatar" aria-hidden="true">
+              <span v-if="msg.role === 'user'">You</span>
+              <span v-else>AI</span>
+            </div>
+            <div class="metric-ai-chat__bubble">
+              <div class="metric-ai-chat__content">{{ msg.content }}</div>
+            </div>
+          </div>
+        </div>
+
+        <form class="metric-ai-chat__composer" @submit.prevent="sendChatMessage()">
+          <label class="metric-ai-chat__input" aria-label="Chat input">
+            <textarea
+              ref="chatInputRef"
+              v-model="chatDraft"
+              rows="2"
+              placeholder="Ask about the selected object, KPIs, or table rows…"
+              @keydown="handleChatKeydown"
+            ></textarea>
+          </label>
+          <button class="metric-ai-chat__send" type="submit" :disabled="!chatDraft.trim() || chatIsBusy">
+            <ArrowRight :size="16" />
+            <span>{{ chatIsBusy ? 'Busy' : 'Send' }}</span>
+          </button>
+        </form>
+      </aside>
+
       <Transition name="metrics-create-slide">
-        <aside v-if="isCreateOpen" class="metrics-panel__create" aria-label="Create metric" @click.stop>
+        <aside
+          v-if="isCreateOpen"
+          class="metrics-panel__create metric-ai-panel__create"
+          aria-label="Create metric"
+          @click.stop
+        >
           <header class="metrics-create__header">
             <div>
               <div class="metrics-create__title">

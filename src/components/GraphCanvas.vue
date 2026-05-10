@@ -29,7 +29,7 @@ import FloatingControls from './FloatingControls.vue'
 import GraphNode from './GraphNode.vue'
 import LeftSelectionPanel from './LeftSelectionPanel.vue'
 import MainToolbar from './MainToolbar.vue'
-import MetricsPanel from './MetricsPanel.vue'
+import MetricAIPanel from './MetricAIPanel.vue'
 import RightVerticalPanel from './RightVerticalPanel.vue'
 import SearchAroundPanel from './SearchAroundPanel.vue'
 
@@ -1276,7 +1276,7 @@ onBeforeUnmount(() => {
       @click="handlePanelClick"
     />
     <Transition name="metrics-panel-slide">
-      <MetricsPanel
+      <MetricAIPanel
         v-if="isMetricsPanelOpen && metricsGraphNode && metricsObjectType"
         :node="metricsGraphNode"
         :object-type="metricsObjectType"
