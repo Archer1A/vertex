@@ -77,3 +77,12 @@ rg -n \"id: 'inst_\" src/mock
    - 节点卡片右上角显示徽章（数字 = 绑定事件数量）
    - 点击节点后左侧面板会自动切到 `Events`，并展示绑定事件卡片
 
+## 5) 预置事件（示例）
+
+以下事件类型已在 `src/mock/events.ts` 里预置，并绑定到指定对象实例（用于 UI 演示）：
+
+| eventId | event_type | event_title | 绑定到 objectInstanceId |
+| --- | --- | --- | --- |
+| `inst_event_004` | `material_shortage` | 物料短缺事件 | `inst_dem_002` |
+| `inst_event_005` | `latest_order_date_minus_7d` | 物料到达最晚下单时间前 7 天提醒 | `inst_dem_003` |
+| `inst_event_006` | `project_delivery_delay_risk` | 项目交付可能延迟风险 | `inst_project_002` |

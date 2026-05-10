@@ -64,6 +64,45 @@ export const eventInstances: ObjectInstance[] = [
       badge_color: '#3b82f6',
       severity: 'low'
     }
+  },
+  {
+    id: 'inst_event_004',
+    objectTypeId: EVENT_OBJECT_TYPE_ID,
+    properties: {
+      event_id: 'EVT-004',
+      event_title: '物料短缺事件',
+      event_type: 'material_shortage',
+      event_time: '2026-05-09T08:30:00+08:00',
+      event_summary: '物料供给不足，需求可能无法按期满足。',
+      badge_color: '#ef4444',
+      severity: 'high'
+    }
+  },
+  {
+    id: 'inst_event_005',
+    objectTypeId: EVENT_OBJECT_TYPE_ID,
+    properties: {
+      event_id: 'EVT-005',
+      event_title: '物料到达最晚下单时间前 7 天提醒',
+      event_type: 'latest_order_date_minus_7d',
+      event_time: '2024-08-24T00:00:00+08:00',
+      event_summary: '距离最晚下单时间（2024-08-31）还有 7 天，请尽快确认下单与到货计划。',
+      badge_color: '#f59e0b',
+      severity: 'medium'
+    }
+  },
+  {
+    id: 'inst_event_006',
+    objectTypeId: EVENT_OBJECT_TYPE_ID,
+    properties: {
+      event_id: 'EVT-006',
+      event_title: '项目交付可能延迟风险',
+      event_type: 'project_delivery_delay_risk',
+      event_time: '2026-05-10T10:00:00+08:00',
+      event_summary: '关键里程碑存在风险，项目交付时间可能延后。',
+      badge_color: '#f97316',
+      severity: 'medium'
+    }
   }
 ]
 
@@ -71,7 +110,10 @@ export const eventBindings: Array<{ objectInstanceId: string; eventId: string }>
   { objectInstanceId: 'inst_sku_002', eventId: 'inst_event_001' },
   { objectInstanceId: 'inst_sku_002', eventId: 'inst_event_002' },
   { objectInstanceId: 'inst_dem_003', eventId: 'inst_event_003' },
-  { objectInstanceId: 'inst_project_001', eventId: 'inst_event_002' }
+  { objectInstanceId: 'inst_project_001', eventId: 'inst_event_002' },
+  { objectInstanceId: 'inst_dem_002', eventId: 'inst_event_004' },
+  { objectInstanceId: 'inst_dem_003', eventId: 'inst_event_005' },
+  { objectInstanceId: 'inst_project_002', eventId: 'inst_event_006' }
 ]
 
 export function getEventsForObjectInstance(objectInstanceId: string): ObjectInstance[] {
@@ -88,4 +130,3 @@ export function getEventBadgeColor(event: ObjectInstance): string {
   if (typeof badgeColor === 'string' && /^#([0-9a-fA-F]{3}){1,2}$/.test(badgeColor)) return badgeColor
   return '#94a3b8'
 }
-

@@ -57,6 +57,30 @@ const graphEdges = reactive<GraphEdgeData[]>([])
 
 const pinnedPropertyApiNamesByObjectTypeId = reactive<Record<string, string[]>>({})
 
+const DEFAULT_NODE_POSITIONS = [
+  { x: 61, y: 43 },
+  { x: 74, y: 34 },
+  { x: 75, y: 57 },
+  { x: 61, y: 66 },
+  { x: 86, y: 46 },
+  { x: 50, y: 34 },
+  { x: 50, y: 58 },
+  { x: 86, y: 68 },
+  { x: 68, y: 78 }
+] as const
+
+const OBJECT_TYPE_POSITIONS = [
+  { x: 54, y: 27 },
+  { x: 67, y: 27 },
+  { x: 80, y: 27 },
+  { x: 55, y: 46 },
+  { x: 68, y: 46 },
+  { x: 81, y: 46 },
+  { x: 58, y: 65 },
+  { x: 71, y: 65 },
+  { x: 84, y: 65 }
+] as const
+
 const panelPosition = reactive({ x: 8, y: 8 })
 const dragState = reactive({
   dragging: false,
@@ -295,21 +319,25 @@ function clampPercent(value: number, min: number, max: number) {
 }
 
 function getDefaultNodePosition(instance: ObjectInstance, index: number) {
-  void instance
-  const fallbackPosition = {
-    x: 48 + (index % 4) * 8,
-    y: 42 + Math.floor(index / 4) * 10
+  const objectTypeIndex = Math.max(0, objectTypes.findIndex((objectType) => objectType.id === instance.objectTypeId))
+  const base = DEFAULT_NODE_POSITIONS[index % DEFAULT_NODE_POSITIONS.length]
+  const row = Math.floor(index / DEFAULT_NODE_POSITIONS.length)
+  const stagger = objectTypeIndex % 3
+
+  return {
+    x: clampPercent(base.x + row * 2.5 - stagger * 1.6, 44, 90),
+    y: clampPercent(base.y + row * 5.5 + stagger * 2.2, 20, 84)
   }
-  return fallbackPosition
 }
 
 function getAnchoredNodePosition(anchor: GraphNodeData, index: number, total: number) {
-  const angle = total <= 1 ? 0 : (Math.PI * 2 * index) / total
-  const radius = 16
+  const angle = total <= 1 ? Math.PI / 5 : -Math.PI / 3 + (Math.PI * 1.45 * index) / Math.max(total - 1, 1)
+  const radiusX = anchor.nodeKind === 'objectType' ? 18 : 20
+  const radiusY = anchor.nodeKind === 'objectType' ? 19 : 16
 
   return {
-    x: clampPercent(anchor.x + Math.cos(angle) * radius, 8, 92),
-    y: clampPercent(anchor.y + Math.sin(angle) * radius, 10, 90)
+    x: clampPercent(anchor.x + Math.cos(angle) * radiusX, 42, 91),
+    y: clampPercent(anchor.y + Math.sin(angle) * radiusY, 18, 86)
   }
 }
 
@@ -338,9 +366,11 @@ function createObjectTypeGraphNode(payload: AddObjectTypePayload): GraphNodeData
   }
 
   const index = graphNodes.filter((node) => node.nodeKind === 'objectType').length
+  const base = OBJECT_TYPE_POSITIONS[index % OBJECT_TYPE_POSITIONS.length]
+  const row = Math.floor(index / OBJECT_TYPE_POSITIONS.length)
   const position = {
-    x: clampPercent(42 + index * 8, 12, 88),
-    y: clampPercent(32 + index * 6, 12, 82)
+    x: clampPercent(base.x + row * 2.5, 44, 89),
+    y: clampPercent(base.y + row * 5, 18, 82)
   }
 
   return {
@@ -616,38 +646,6 @@ function metric(label: string, value: string, title?: string): GraphNodeDisplayD
   }
 }
 
-function getBadgeTone(label: string): GraphNodeDisplayData['badges'][number]['tone'] {
-  const normalizedLabel = label.toLowerCase()
-
-  if (['failed', 'critical', 'high', 'degraded', 'quarantined'].some((keyword) => normalizedLabel.includes(keyword))) {
-    return 'danger'
-  }
-
-  if (['warning', 'medium'].some((keyword) => normalizedLabel.includes(keyword))) {
-    return 'warning'
-  }
-
-  if (['running', 'passed', 'active'].some((keyword) => normalizedLabel.includes(keyword))) {
-    return 'success'
-  }
-
-  return 'info'
-}
-
-function badge(label: string, tone?: GraphNodeDisplayData['badges'][number]['tone']): GraphNodeDisplayData['badges'][number] {
-  const resolvedLabel = displayOrDash(label)
-
-  return {
-    label: resolvedLabel,
-    tone: tone ?? getBadgeTone(resolvedLabel),
-    title: resolvedLabel
-  }
-}
-
-function compactBadgeList(badges: GraphNodeDisplayData['badges']) {
-  return badges.filter((item) => item.label !== '-').slice(0, 3)
-}
-
 function getNodeDisplayData(node: GraphNodeData): GraphNodeDisplayData {
   const objectType = getObjectTypeById(node.objectTypeId)
   const title = node.label
@@ -656,44 +654,16 @@ function getNodeDisplayData(node: GraphNodeData): GraphNodeDisplayData {
 
   if (node.nodeKind === 'objectType') {
     const instanceCount = getFilteredObjectInstances(node.objectTypeId).length
-    const linkCount = linkTypes.filter((linkType) => {
-      return linkType.sourceObjectTypeId === node.objectTypeId || linkType.targetObjectTypeId === node.objectTypeId
-    }).length
 
     return {
       title,
       subtitle,
       accentColor,
       icon: node.type,
-      metrics: [
-        metric('Schema', String(objectType?.properties.length ?? 0), 'Property count'),
-        metric('Records', String(instanceCount), 'Instance count'),
-        metric('Links', String(linkCount), 'Relationship type count')
-      ],
-      badges: compactBadgeList([
-        badge('ObjectType', 'info'),
-        badge(objectType?.status ?? '-', 'success'),
-        badge(objectType?.apiName ?? node.objectTypeId, 'neutral')
-      ])
+      metrics: [metric('Records', String(instanceCount), 'Instance count')],
+      badges: []
     }
   }
-
-  const pinnedApiNames = pinnedPropertyApiNamesByObjectTypeId[node.objectTypeId] ?? []
-  const chips =
-    pinnedApiNames
-      .map((apiName) => {
-        const property = objectType?.properties.find((candidate) => candidate.apiName === apiName)
-        if (!property) {
-          return null
-        }
-
-        return {
-          key: property.displayName,
-          value: getInstancePropertyText(node.instance, property)
-        }
-      })
-      .filter((chip): chip is NonNullable<typeof chip> => chip !== null)
-      .slice(0, 2)
 
   const statusProperty = objectType?.properties.find((property) => property.apiName.toLowerCase().includes('status'))
   const quantityProperty = objectType?.properties.find((property) => property.apiName.toLowerCase().includes('quantity'))
@@ -723,13 +693,8 @@ function getNodeDisplayData(node: GraphNodeData): GraphNodeDisplayData {
     subtitle,
     accentColor,
     icon: node.type,
-    chips: chips.length ? chips : undefined,
     metrics: instanceMetrics.slice(0, 3),
-    badges: compactBadgeList([
-      badge(statusProperty ? getInstancePropertyText(node.instance, statusProperty) : '-', 'neutral'),
-      badge(objectType?.apiName ?? node.objectTypeId, 'info'),
-      badge(node.instance.id, 'neutral')
-    ])
+    badges: []
   }
 }
 
@@ -1203,8 +1168,8 @@ function updateNodePosition(clientX: number, clientY: number) {
   const nextX = ((clientX - rect.left - dragState.offsetX) / rect.width) * 100
   const nextY = ((clientY - rect.top - dragState.offsetY) / rect.height) * 100
 
-  node.x = Math.min(94, Math.max(6, nextX))
-  node.y = Math.min(92, Math.max(8, nextY))
+  node.x = Math.min(93, Math.max(42, nextX))
+  node.y = Math.min(89, Math.max(12, nextY))
 }
 
 function handleNodePointerDown(event: PointerEvent, nodeId: string) {

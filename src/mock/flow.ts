@@ -9,12 +9,12 @@ export interface FlowNode {
 export const flowData: FlowNode[] = [
   {
     name: "开始",
-    relationObjectType: ["dolor", "dolor officia tempor laborum"],
+    relationObjectType: [],
     childrenFlow: [],
   },
   {
     name: "新增项目订单",
-    relationObjectType: ["cupidatat elit sunt", "in ea Excepteur esse", "voluptate"],
+    relationObjectType: ["object_type_project", "object_type_project_line_item"],
     childrenFlow: [
       {
         name: "确定服务器种类数量",
@@ -25,7 +25,7 @@ export const flowData: FlowNode[] = [
   },
   {
     name: "生成物料需求单",
-    relationObjectType: ["tempor sunt consectetur", "irure", "dolore eu Ut dolor non"],
+    relationObjectType: ["object_type_material", "object_type_project_line_item",'object_type_material_demand'],
     childrenFlow: [
       {
         name: "查询BOM",
@@ -41,7 +41,7 @@ export const flowData: FlowNode[] = [
   },
   {
     name: "生成生产计划",
-    relationObjectType: [],
+    relationObjectType: ["object_type_production_order","object_type_project"],
     childrenFlow: [
       {
         name: "查询交付时间",
@@ -57,7 +57,7 @@ export const flowData: FlowNode[] = [
   },
   {
     name: "采购",
-    relationObjectType: [],
+    relationObjectType: ["object_type_material",],
     childrenFlow: [
       {
         name: "查询生产计划",
@@ -78,7 +78,7 @@ export const flowData: FlowNode[] = [
   },
   {
     name: "执行生产计划",
-    relationObjectType: [],
+    relationObjectType: ["object_type_production_order",],
     childrenFlow: [
       {
         name: "更新每日实际生产",

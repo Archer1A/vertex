@@ -15,11 +15,20 @@ import {
   SquarePen
 } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
+import type { EChartsOption } from 'echarts'
 import type { ObjectType } from '../mock/mock'
 import type { AddObjectPayload, InstanceFilterPayload, SelectedObject } from '../types/graph'
 import AddObjectDrawer from './AddObjectDrawer.vue'
+import EChart from './EChart.vue'
 import PropertyList from './PropertyList.vue'
-import TimeSeriesChart from './TimeSeriesChart.vue'
+
+type ChartSeriesRow = {
+  key: string
+  label: string
+  color: string
+  unit?: string
+  points: Array<{ ts: string; value: number | null }>
+}
 
 const props = defineProps<{
   selectedObject: SelectedObject | null
@@ -67,8 +76,8 @@ const eventCount = computed(() => props.selectedObject?.events?.length ?? 0)
 const timeSeriesRows = computed(() => props.selectedObject?.timeSeries ?? [])
 const planned = computed(() => timeSeriesRows.value.find((row) => row.apiName === 'dailyPlannedQuantity'))
 const actual = computed(() => timeSeriesRows.value.find((row) => row.apiName === 'dailyActualQuantity'))
-const chartSeries = computed(() => {
-  const series = []
+const chartSeries = computed<ChartSeriesRow[]>(() => {
+  const series: ChartSeriesRow[] = []
   if (planned.value) {
     series.push({ key: planned.value.apiName, label: planned.value.displayName, color: '#2563eb', unit: planned.value.unit, points: planned.value.points })
   }
@@ -76,6 +85,72 @@ const chartSeries = computed(() => {
     series.push({ key: actual.value.apiName, label: actual.value.displayName, color: '#7c3aed', unit: actual.value.unit, points: actual.value.points })
   }
   return series
+})
+
+const seriesChartOption = computed<EChartsOption>(() => {
+  const xLabels = chartSeries.value[0]?.points.map((point) => point.ts) ?? []
+  const unit = chartSeries.value.find((row) => row.unit)?.unit ?? ''
+
+  return {
+    color: chartSeries.value.map((row) => row.color),
+    animationDuration: 220,
+    grid: {
+      top: 34,
+      right: 12,
+      bottom: 28,
+      left: 38,
+      containLabel: true
+    },
+    legend: {
+      top: 0,
+      left: 0,
+      itemWidth: 10,
+      itemHeight: 10,
+      icon: 'roundRect',
+      textStyle: {
+        color: '#6b7280',
+        fontSize: 12
+      }
+    },
+    tooltip: {
+      trigger: 'axis',
+      confine: true,
+      valueFormatter: (value) => (value === null || value === undefined ? '-' : `${value}${unit ? ` ${unit}` : ''}`)
+    },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: xLabels,
+      axisLine: { lineStyle: { color: '#d9dde3' } },
+      axisTick: { show: false },
+      axisLabel: {
+        color: '#94a3b8',
+        fontSize: 10,
+        hideOverlap: true
+      }
+    },
+    yAxis: {
+      type: 'value',
+      splitLine: { lineStyle: { color: '#edf2f7' } },
+      axisLabel: {
+        color: '#94a3b8',
+        fontSize: 10,
+        formatter: (value: number) => `${value}`
+      }
+    },
+    series: chartSeries.value.map((row) => ({
+      name: row.label,
+      type: 'line',
+      smooth: true,
+      showSymbol: true,
+      symbol: 'circle',
+      symbolSize: 5,
+      connectNulls: false,
+      data: row.points.map((point) => point.value),
+      lineStyle: { width: 2 },
+      emphasis: { focus: 'series' }
+    }))
+  }
 })
 
 function handleTogglePinnedProperty(propertyApiName: string) {
@@ -558,7 +633,9 @@ watch(
           <template v-else-if="activeSecondaryTab === 'Series'">
             <div v-if="chartSeries.length" class="series-panel">
               <div class="series-panel__title">Daily production</div>
-              <TimeSeriesChart :series="chartSeries" :height="180" />
+              <div class="series-panel__chart">
+                <EChart :option="seriesChartOption" aria-label="Daily production time series chart" />
+              </div>
             </div>
             <div v-else class="selection-panel__empty">
               <div class="selection-panel__empty-title">Series</div>

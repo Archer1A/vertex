@@ -17,6 +17,20 @@ const props = defineProps<{
 const hasEventBadge = computed(() => {
   return (props.eventCount ?? 0) > 0
 })
+
+const hasMetrics = computed(() => props.displayData.metrics.length > 0)
+const hasBadges = computed(() => props.displayData.badges.length > 0)
+const hasSingleMetric = computed(() => props.displayData.metrics.length === 1)
+const hasDoubleMetrics = computed(() => props.displayData.metrics.length === 2)
+
+const nodeAriaLabel = computed(() => {
+  const eventText = hasEventBadge.value ? `${props.eventCount} event alerts` : ''
+  return [props.displayData.title, props.displayData.subtitle, eventText].filter(Boolean).join('. ')
+})
+
+const nodeStyle = computed(() => ({
+  '--node-accent': props.displayData.accentColor
+}))
 </script>
 
 <template>
@@ -32,8 +46,8 @@ const hasEventBadge = computed(() => {
       }
     ]"
     type="button"
-    :aria-label="displayData.title"
-    :style="{ '--node-accent': displayData.accentColor }"
+    :aria-label="nodeAriaLabel"
+    :style="nodeStyle"
   >
     <span class="graph-node__selection-bg" aria-hidden="true"></span>
 
@@ -66,6 +80,38 @@ const hasEventBadge = computed(() => {
               {{ chip.value }}
             </span>
           </span>
+        </span>
+      </span>
+
+      <span
+        v-if="hasMetrics"
+        class="graph-node__metrics"
+        :class="{
+          'graph-node__metrics--single': hasSingleMetric,
+          'graph-node__metrics--double': hasDoubleMetrics
+        }"
+        aria-label="Node metrics"
+      >
+        <span
+          v-for="metric in displayData.metrics"
+          :key="metric.label"
+          class="graph-node__metric"
+          :title="metric.title"
+        >
+          <span class="graph-node__metric-value">{{ metric.value }}</span>
+          <span class="graph-node__metric-label">{{ metric.label }}</span>
+        </span>
+      </span>
+
+      <span v-if="hasBadges" class="graph-node__badges" aria-label="Node badges">
+        <span
+          v-for="badge in displayData.badges"
+          :key="`${badge.tone}-${badge.label}`"
+          class="graph-node__badge"
+          :class="`graph-node__badge--${badge.tone}`"
+          :title="badge.title"
+        >
+          {{ badge.label }}
         </span>
       </span>
     </span>
