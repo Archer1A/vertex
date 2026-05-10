@@ -15,8 +15,8 @@ import {
   SquarePen
 } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
-import type { ObjectInstance, ObjectType } from '../mock/mock'
-import type { AddObjectPayload, SelectedObject } from '../types/graph'
+import type { ObjectType } from '../mock/mock'
+import type { AddObjectPayload, InstanceFilterPayload, SelectedObject } from '../types/graph'
 import AddObjectDrawer from './AddObjectDrawer.vue'
 import PropertyList from './PropertyList.vue'
 
@@ -28,7 +28,6 @@ const props = defineProps<{
     edges: number
   }
   objectTypes: ObjectType[]
-  objectInstances: ObjectInstance[]
   nodeGroups: Array<{
     objectTypeId: string
     displayName: string
@@ -42,6 +41,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: 'dockTool', payload: { tab: string; clientX: number; clientY: number }): void
   (event: 'addToCanvas', payload: AddObjectPayload): void
+  (event: 'applyInstanceFilter', payload: InstanceFilterPayload): void
 }>()
 
 const filterText = ref('')
@@ -53,6 +53,12 @@ const selectedLayerObjectTypeId = ref('object_type_flight')
 const isAddObjectDrawerOpen = ref(false)
 const activeSecondaryTab = ref('Properties')
 const activeAiEventId = ref('')
+const instanceFilterProperty = ref('')
+const instanceFilterValue = ref('')
+const selectedObjectKind = computed(() => props.selectedObject?.nodeKind ?? 'objectInstance')
+const isObjectTypeSelection = computed(() => selectedObjectKind.value === 'objectType')
+const instanceFilterProperties = computed(() => props.selectedObject?.instanceProperties ?? [])
+const instanceCount = computed(() => props.selectedObject?.instances?.length ?? 0)
 const eventCount = computed(() => props.selectedObject?.events?.length ?? 0)
 
 const tabDragState = {
@@ -146,11 +152,11 @@ function openAddObjectDrawer() {
   isAddObjectDrawerOpen.value = true
 }
 
-function handleAddToCanvas(payload: AddObjectPayload) {
+function handleAddObjectType(payload: AddObjectPayload) {
   selectedLayerObjectTypeId.value = payload.objectTypeId
   isAddObjectDrawerOpen.value = false
   emit('addToCanvas', payload)
-  console.log('add object drawer payload', payload)
+  console.log('add objectType drawer payload', payload)
 }
 
 function getEventProperty(event: NonNullable<SelectedObject['events']>[number], key: string) {
@@ -217,11 +223,37 @@ function askAiAboutEvent(event: NonNullable<SelectedObject['events']>[number]) {
   console.log('ask ai about event', event.id)
 }
 
+function syncInstanceFilterControls() {
+  const appliedFilter = props.selectedObject?.appliedInstanceFilter
+  const firstProperty = instanceFilterProperties.value[0]?.apiName ?? ''
+
+  instanceFilterProperty.value = appliedFilter?.propertyApiName ?? firstProperty
+  instanceFilterValue.value = appliedFilter?.value ?? ''
+}
+
+function applyInstanceFilter() {
+  if (!props.selectedObject || !instanceFilterProperty.value) {
+    return
+  }
+
+  emit('applyInstanceFilter', {
+    objectTypeId: props.selectedObject.objectTypeId,
+    propertyApiName: instanceFilterProperty.value,
+    operator: 'equals',
+    value: instanceFilterValue.value.trim()
+  })
+}
+
 watch(
   () => props.selectedObject?.nodeLabel,
   () => {
-    activeSecondaryTab.value = 'Properties'
+    if (props.selectedObject) {
+      activePrimaryTab.value = 'Selection'
+    }
+
+    activeSecondaryTab.value = isObjectTypeSelection.value ? 'Instances' : 'Properties'
     activeAiEventId.value = ''
+    syncInstanceFilterControls()
   }
 )
 </script>
@@ -261,7 +293,7 @@ watch(
           <div class="layers-panel__add">
             <button type="button" @click="openAddObjectDrawer">
               <CirclePlus :size="18" />
-              <span>Add object</span>
+              <span>Add objectType</span>
             </button>
           </div>
 
@@ -330,9 +362,8 @@ watch(
           <AddObjectDrawer
             v-if="isAddObjectDrawerOpen"
             :object-types="objectTypes"
-            :object-instances="objectInstances"
             @close="isAddObjectDrawerOpen = false"
-            @add-to-canvas="handleAddToCanvas"
+            @add-to-canvas="handleAddObjectType"
           />
         </div>
       </template>
@@ -358,6 +389,15 @@ watch(
           </div>
 
           <div class="selection-panel__subtabs">
+            <button
+              v-if="isObjectTypeSelection"
+              class="subtab"
+              :class="{ 'subtab--active': activeSecondaryTab === 'Instances' }"
+              @click="activeSecondaryTab = 'Instances'"
+            >
+              Instances
+              <span class="subtab__badge">{{ instanceCount }}</span>
+            </button>
             <button
               class="subtab"
               :class="{ 'subtab--active': activeSecondaryTab === 'Properties' }"
@@ -388,6 +428,48 @@ watch(
             </div>
 
             <PropertyList :items="selectedObject.properties" />
+          </template>
+
+          <template v-else-if="activeSecondaryTab === 'Instances'">
+            <div class="instance-filter">
+              <select v-model="instanceFilterProperty" aria-label="Instance filter property">
+                <option
+                  v-for="property in instanceFilterProperties"
+                  :key="property.apiName"
+                  :value="property.apiName"
+                >
+                  {{ property.displayName }}
+                </option>
+              </select>
+              <span>equals</span>
+              <input
+                v-model="instanceFilterValue"
+                type="text"
+                placeholder="Value"
+                aria-label="Instance filter value"
+                @keydown.enter="applyInstanceFilter"
+              />
+              <button type="button" :disabled="!instanceFilterProperty" @click="applyInstanceFilter">
+                Apply
+              </button>
+            </div>
+
+            <div v-if="selectedObject.instances?.length" class="instance-list" aria-label="ObjectType instances">
+              <article v-for="instance in selectedObject.instances" :key="instance.id" class="instance-row">
+                <div class="instance-row__icon">
+                  <MapPin :size="16" />
+                </div>
+                <div class="instance-row__copy">
+                  <div class="instance-row__title" :title="instance.title">{{ instance.title }}</div>
+                  <div class="instance-row__subtitle" :title="instance.subtitle">{{ instance.subtitle }}</div>
+                </div>
+              </article>
+            </div>
+
+            <div v-else class="selection-panel__empty">
+              <div class="selection-panel__empty-title">No instances</div>
+              <div class="selection-panel__empty-copy">This ObjectType has no instances in the mock dataset.</div>
+            </div>
           </template>
 
           <template v-else-if="activeSecondaryTab === 'Events'">

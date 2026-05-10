@@ -1,12 +1,25 @@
-import type { LinkType, ObjectInstance } from '../mock/mock'
+import type { LinkType, ObjectInstance, PropertyType } from '../mock/mock'
 
 export interface SelectedObject {
   title: string
   subtitle: string
   nodeLabel: string
+  nodeKind: 'objectType' | 'objectInstance'
+  objectTypeId: string
   properties: Array<{
     key: string
     value: string
+  }>
+  instanceProperties?: Array<{
+    apiName: string
+    displayName: string
+    baseType: PropertyType['baseType']
+  }>
+  appliedInstanceFilter?: InstanceFilterPayload | null
+  instances?: Array<{
+    id: string
+    title: string
+    subtitle: string
   }>
   events?: Array<{
     id: string
@@ -22,11 +35,29 @@ export interface SelectedObject {
 export interface GraphNodeData {
   id: string
   label: string
+  nodeKind: 'objectType' | 'objectInstance'
   type: 'airport' | 'flight' | 'event'
   objectTypeId: string
   instance: ObjectInstance
   x: number
   y: number
+}
+
+export interface GraphNodeDisplayData {
+  title: string
+  subtitle: string
+  accentColor: string
+  icon: 'airport' | 'flight' | 'event'
+  metrics: Array<{
+    label: string
+    value: string
+    title?: string
+  }>
+  badges: Array<{
+    label: string
+    tone: 'info' | 'success' | 'warning' | 'danger' | 'neutral'
+    title?: string
+  }>
 }
 
 export interface GraphEdgeData {
@@ -44,11 +75,26 @@ export type EqualsFilterPayload = {
   value: string
 }
 
-export type AddObjectPayload = {
+export type InstanceFilterPayload = {
+  objectTypeId: string
+  propertyApiName: string
+  operator: 'equals'
+  value: string
+}
+
+export type AddObjectTypePayload = {
+  nodeKind: 'objectType'
+  objectTypeId: string
+}
+
+export type AddObjectInstancePayload = {
+  nodeKind: 'objectInstance'
   objectTypeId: string
   objectIds: string[]
   filter: EqualsFilterPayload | null
 }
+
+export type AddObjectPayload = AddObjectTypePayload | AddObjectInstancePayload
 
 export type SearchAroundAddPayload = {
   linkType: LinkType

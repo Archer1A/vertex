@@ -1,0 +1,38 @@
+import fs from 'node:fs'
+import assert from 'node:assert/strict'
+
+const graphTypes = fs.readFileSync(new URL('../src/types/graph.ts', import.meta.url), 'utf8')
+const graphCanvas = fs.readFileSync(new URL('../src/components/GraphCanvas.vue', import.meta.url), 'utf8')
+const leftPanel = fs.readFileSync(new URL('../src/components/LeftSelectionPanel.vue', import.meta.url), 'utf8')
+
+assert.match(graphTypes, /nodeKind: 'objectType' \| 'objectInstance'/)
+assert.match(graphTypes, /instances\?: Array<\{/)
+assert.match(graphTypes, /instanceProperties\?: Array<\{/)
+assert.match(graphTypes, /export type InstanceFilterPayload = \{/)
+
+assert.match(graphCanvas, /instances: getObjectTypeInstancesForSelection\(node\.objectTypeId\)/)
+assert.match(graphCanvas, /instanceProperties: getObjectTypeInstanceFilterProperties\(node\.objectTypeId\)/)
+assert.match(graphCanvas, /function getObjectTypeInstancesForSelection\(objectTypeId: string\)/)
+assert.match(graphCanvas, /function getObjectTypeInstanceFilterProperties\(objectTypeId: string\)/)
+assert.match(graphCanvas, /function getInstancePropertyValue\(/)
+assert.match(graphCanvas, /instance\.properties\[property\.apiName\] \?\? instance\.properties\[property\.id\]/)
+assert.match(graphCanvas, /function handleApplyInstanceFilter\(payload: InstanceFilterPayload\)/)
+assert.doesNotMatch(graphCanvas, /function refreshInstanceNodesForObjectType\(/)
+assert.doesNotMatch(graphCanvas, /function removeInstanceNodesForObjectType\(/)
+assert.doesNotMatch(graphCanvas, /refreshInstanceNodesForObjectType\(objectTypeNode\)/)
+assert.doesNotMatch(graphCanvas, /addNodeIfMissing\(instance, index, objectTypeNode/)
+assert.match(graphCanvas, /objectInstances\.filter\(\(instance\) => instance\.objectTypeId === objectTypeId && matchesInstanceFilter\(instance, filter\)\)/)
+assert.match(graphCanvas, /property\.apiName === filter\.propertyApiName \|\| property\.id === filter\.propertyApiName/)
+assert.match(graphCanvas, /getInstancePropertyText\(instance, property\) === filter\.value/)
+
+assert.match(leftPanel, /const isObjectTypeSelection = computed\(\(\) => selectedObjectKind\.value === 'objectType'\)/)
+assert.match(leftPanel, /const instanceFilterProperty = ref\(''\)/)
+assert.match(leftPanel, /function applyInstanceFilter\(\)/)
+assert.match(leftPanel, /emit\('applyInstanceFilter'/)
+assert.match(leftPanel, /activePrimaryTab\.value = 'Selection'/)
+assert.match(leftPanel, />\s*Instances\s*</)
+assert.match(leftPanel, />\s*equals\s*</)
+assert.match(leftPanel, /activeSecondaryTab === 'Instances'/)
+assert.match(leftPanel, /class="instance-filter"/)
+assert.match(leftPanel, /class="instance-list"/)
+assert.match(leftPanel, /selectedObject\.instances/)

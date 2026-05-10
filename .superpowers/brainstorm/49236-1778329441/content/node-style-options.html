@@ -1,0 +1,255 @@
+<style>
+  .node-board {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+    margin-top: 18px;
+  }
+
+  .node-option {
+    border: 1px solid #d9dde3;
+    border-radius: 10px;
+    background: #ffffff;
+    box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+    overflow: hidden;
+    cursor: pointer;
+  }
+
+  .node-option:hover {
+    border-color: #93c5fd;
+  }
+
+  .node-stage {
+    min-height: 260px;
+    display: grid;
+    place-items: center;
+    background:
+      linear-gradient(rgba(217, 221, 227, 0.46) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(217, 221, 227, 0.46) 1px, transparent 1px),
+      #f6f7f9;
+    background-size: 24px 24px;
+    padding: 30px;
+  }
+
+  .node-card {
+    width: 230px;
+    border: 1px solid #cfd6df;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #1f2933;
+    box-shadow: 0 16px 32px rgba(15, 23, 42, 0.14);
+  }
+
+  .node-card__top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    border-bottom: 1px solid #eef2f6;
+  }
+
+  .node-icon {
+    width: 42px;
+    height: 42px;
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    border-radius: 7px;
+    background: #7c3aed;
+    color: #ffffff;
+    font-weight: 700;
+    box-shadow: inset 0 -10px 20px rgba(31, 41, 55, 0.18);
+  }
+
+  .node-title {
+    min-width: 0;
+  }
+
+  .node-title strong {
+    display: block;
+    font-size: 13px;
+    line-height: 18px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .node-title span {
+    display: block;
+    color: #64748b;
+    font-size: 11px;
+  }
+
+  .node-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: #e5eaf0;
+  }
+
+  .node-metrics div {
+    background: #f8fafc;
+    padding: 8px 6px;
+    text-align: center;
+  }
+
+  .node-metrics b {
+    display: block;
+    font-size: 13px;
+  }
+
+  .node-metrics small {
+    color: #64748b;
+    font-size: 10px;
+  }
+
+  .node-tags {
+    display: flex;
+    gap: 6px;
+    padding: 8px 10px 10px;
+  }
+
+  .node-pill {
+    border-radius: 999px;
+    padding: 3px 7px;
+    background: #eef6ff;
+    color: #2563eb;
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  .node-pill.warn {
+    background: #fef2f2;
+    color: #dc2626;
+  }
+
+  .compact-node {
+    width: 154px;
+    display: grid;
+    justify-items: center;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.8);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.72);
+    box-shadow: 0 10px 25px rgba(15, 23, 42, 0.12);
+  }
+
+  .compact-node .node-icon {
+    width: 56px;
+    height: 56px;
+  }
+
+  .compact-node strong {
+    max-width: 132px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+  }
+
+  .halo-node {
+    position: relative;
+    width: 205px;
+    padding: 16px 12px 12px;
+    border: 1px solid #b8c5d6;
+    border-radius: 12px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.96));
+    box-shadow: 0 0 0 8px rgba(147, 197, 253, 0.16), 0 18px 34px rgba(15, 23, 42, 0.14);
+  }
+
+  .halo-node .node-icon {
+    margin: 0 auto 10px;
+  }
+
+  .halo-node strong,
+  .halo-node span {
+    display: block;
+    text-align: center;
+  }
+
+  .halo-node strong {
+    font-size: 13px;
+  }
+
+  .halo-node span {
+    color: #64748b;
+    font-size: 11px;
+  }
+
+  .node-body {
+    padding: 12px;
+  }
+
+  .node-option h3 {
+    margin: 0 0 6px;
+    font-size: 15px;
+  }
+
+  .node-option p {
+    margin: 0;
+    color: #64748b;
+    font-size: 12px;
+    line-height: 18px;
+  }
+</style>
+
+<h2>节点样式方向</h2>
+<p class="subtitle">点击一个你更喜欢的方向；也可以直接在对话里说要混合哪些元素。</p>
+
+<div class="node-board">
+  <div class="node-option" data-choice="rich-card" onclick="toggleSelect(this)">
+    <div class="node-stage">
+      <div class="node-card">
+        <div class="node-card__top">
+          <div class="node-icon">PIN</div>
+          <div class="node-title">
+            <strong>[Workstation1] Burn-in Station</strong>
+            <span>[Burn-in] Workstation</span>
+          </div>
+        </div>
+        <div class="node-metrics">
+          <div><b>3/16</b><small>servers</small></div>
+          <div><b>41.8C</b><small>temp</small></div>
+          <div><b>1</b><small>event</small></div>
+        </div>
+        <div class="node-tags">
+          <span class="node-pill">Running</span>
+          <span class="node-pill warn">Pass rate</span>
+        </div>
+      </div>
+    </div>
+    <div class="node-body">
+      <h3>A. Rich entity card</h3>
+      <p>最像企业级图谱详情页：直接展示标题、类型、状态和关键指标。适合当前 DOM/CSS 快速落地。</p>
+    </div>
+  </div>
+
+  <div class="node-option" data-choice="compact-framework" onclick="toggleSelect(this)">
+    <div class="node-stage">
+      <div class="compact-node">
+        <div class="node-icon">PIN</div>
+        <strong>[Workstation1] Burn-in...</strong>
+        <span class="node-pill">3 linked</span>
+      </div>
+    </div>
+    <div class="node-body">
+      <h3>B. Compact graph node</h3>
+      <p>更贴近 Cytoscape / G6 默认图谱表达：节点小、边更清晰，详细信息通过 hover 或选中面板展开。</p>
+    </div>
+  </div>
+
+  <div class="node-option" data-choice="selected-halo" onclick="toggleSelect(this)">
+    <div class="node-stage">
+      <div class="halo-node">
+        <div class="node-icon">PIN</div>
+        <strong>[Workstation1] Burn-in Station</strong>
+        <span>Running · 3 active servers · 1 event</span>
+      </div>
+    </div>
+    <div class="node-body">
+      <h3>C. Selected focus tile</h3>
+      <p>平时保持简洁，选中时变成更漂亮的信息卡。画布不会太拥挤，也能突出当前 vertex。</p>
+    </div>
+  </div>
+</div>
