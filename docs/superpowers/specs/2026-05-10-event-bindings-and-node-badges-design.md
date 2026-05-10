@@ -97,7 +97,7 @@ Update `src/components/LeftSelectionPanel.vue`:
 
 ## UX / styling notes
 
-- Badge stays in the icon container’s top-right (existing `.graph-node__event-badge` positioning).
+- Badge is positioned on the node card’s top-right (not the icon’s top-right). Implementation prefers a CSS-only change by making the node header/surface the positioning context and adjusting `.graph-node__event-badge` offsets.
 - Badge color uses `badgeColor` for background/border/text with small alpha adjustments to stay readable.
 
 ## Acceptance criteria
@@ -106,4 +106,3 @@ Update `src/components/LeftSelectionPanel.vue`:
 - Adding a node to the canvas that has bound events shows a badge at node icon top-right.
 - Selecting that node shows the Events list in `LeftSelectionPanel` (and auto-switches to Events when events exist).
 - Nodes with no events show no badge; Events tab shows empty state/count 0.
-
