@@ -11,14 +11,15 @@ type PositionedFlowNode = {
   depth: number
 }
 
-const NODE_W = 420
-const NODE_H = 96
-const GAP_X = 84
-const GAP_Y = 20
-const PAD_X = 24
-const PAD_Y = 24
+const NODE_W = 200
+const NODE_H = 120
+const GAP_X = 56
+const GAP_Y = 8
+const PAD_X = 16
+const PAD_Y = 8
 
 const expandedByKey = ref<Record<string, boolean>>({})
+const manualOffsetsByKey = ref<Record<string, { x: number; y: number }>>({})
 
 function isExpanded(key: string) {
   return expandedByKey.value[key] ?? false
@@ -50,8 +51,9 @@ const positioned = computed<PositionedFlowNode[]>(() => {
   function place(nodes: FlowNode[], prefix: string, depth: number) {
     nodes.forEach((node, idx) => {
       const key = prefix ? `${prefix}/${idx}` : `${idx}`
-      const x = PAD_X + depth * (NODE_W + GAP_X)
-      const y = PAD_Y + row * (NODE_H + GAP_Y)
+      const offset = manualOffsetsByKey.value[key] ?? { x: 0, y: 0 }
+      const x = PAD_X + depth * (NODE_W + GAP_X) + offset.x
+      const y = PAD_Y + row * (NODE_H + GAP_Y) + offset.y
       out.push({ key, node, x, y, depth })
 
       row += 1
@@ -82,6 +84,17 @@ function onToggle(key: string) {
   setExpanded(key, open)
   console.log('flow node toggle', key, node.name, open ? 'open' : 'closed')
 }
+
+function onMove(key: string, dx: number, dy: number) {
+  const current = manualOffsetsByKey.value[key] ?? { x: 0, y: 0 }
+  manualOffsetsByKey.value = {
+    ...manualOffsetsByKey.value,
+    [key]: {
+      x: current.x + dx,
+      y: current.y + dy
+    }
+  }
+}
 </script>
 
 <template>
@@ -94,8 +107,11 @@ function onToggle(key: string) {
         :nodeKey="item.key"
         :x="item.x"
         :y="item.y"
+        :width="200"
+        :height="120"
         :expanded="isExpanded(item.key)"
         @toggle="onToggle"
+        @move="onMove"
       />
     </div>
   </div>

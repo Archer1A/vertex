@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { FlowNode } from '../mock/flow'
 
 const emit = defineEmits<{
   (e: 'toggle', key: string): void
+  (e: 'move', key: string, dx: number, dy: number): void
 }>()
 
 const props = defineProps<{
@@ -16,46 +17,82 @@ const props = defineProps<{
   expanded?: boolean
 }>()
 
-const width = computed(() => props.width ?? 420)
-const height = computed(() => props.height ?? 96)
+const width = computed(() => props.width ?? 200)
+const height = computed(() => props.height ?? 120)
 
 const hasChildren = computed(() => (props.node.childrenFlow?.length ?? 0) > 0)
+const buttonRef = ref<HTMLButtonElement | null>(null)
+const isDragging = ref(false)
+const didDrag = ref(false)
 
 const points = computed(() => {
-  const w = width.value
-  const h = height.value
-  const bevel = Math.round(h * 0.33)
-  const left = 0
-  const right = w
-  const top = 0
-  const bottom = h
-  const midY = Math.round(h / 2)
-
-  return [
-    `${left + bevel},${top}`,
-    `${left + bevel * 1.6},${midY}`,
-    `${left + bevel},${bottom}`,
-    `${right - bevel},${bottom}`,
-    `${right - bevel * 1.6},${midY}`,
-    `${right - bevel},${top}`
-  ].join(' ')
+  return '80,20 100,60 80,100 160,100 180,60 160,20'
 })
 
 function onClick(e: MouseEvent) {
   e.stopPropagation()
+  if (didDrag.value) {
+    didDrag.value = false
+    return
+  }
+
   console.log('flow node clicked', props.nodeKey, props.node.name)
   emit('toggle', props.nodeKey)
+}
+
+function onPointerDown(e: PointerEvent) {
+  if (e.button !== 0) return
+
+  e.stopPropagation()
+  isDragging.value = true
+  didDrag.value = false
+
+  const start = {
+    x: e.clientX,
+    y: e.clientY
+  }
+
+  const move = (moveEvent: PointerEvent) => {
+    if (!isDragging.value) return
+
+    const dx = moveEvent.clientX - start.x
+    const dy = moveEvent.clientY - start.y
+
+    if (Math.abs(dx) + Math.abs(dy) < 2) return
+
+    didDrag.value = true
+    start.x = moveEvent.clientX
+    start.y = moveEvent.clientY
+    emit('move', props.nodeKey, dx, dy)
+  }
+
+  const up = () => {
+    isDragging.value = false
+    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointerup', up)
+  }
+
+  buttonRef.value?.setPointerCapture(e.pointerId)
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', up)
 }
 </script>
 
 <template>
   <div class="flow-node" :style="{ transform: `translate(${x}px, ${y}px)` }">
-    <button class="flow-node__hit" type="button" @click="onClick">
+    <button
+      ref="buttonRef"
+      class="flow-node__hit"
+      :class="{ 'flow-node__hit--dragging': isDragging }"
+      type="button"
+      @click="onClick"
+      @pointerdown="onPointerDown"
+    >
       <svg
         class="flow-node__svg"
         :width="width"
         :height="height"
-        :viewBox="`0 0 ${width} ${height}`"
+        viewBox="0 0 200 120"
         xmlns="http://www.w3.org/2000/svg"
         aria-hidden="true"
       >
@@ -80,8 +117,8 @@ function onClick(e: MouseEvent) {
   position: absolute;
   left: 0;
   top: 0;
-  width: 420px;
-  height: 96px;
+  width: 200px;
+  height: 120px;
 }
 
 .flow-node__hit {
@@ -91,7 +128,13 @@ function onClick(e: MouseEvent) {
   padding: 0;
   border: 0;
   background: transparent;
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.flow-node__hit--dragging {
+  cursor: grabbing;
 }
 
 .flow-node__svg {
@@ -102,18 +145,18 @@ function onClick(e: MouseEvent) {
 }
 
 .flow-node__shape {
-  fill: #f0f0f0;
-  stroke: #111827;
-  stroke-width: 2.6;
+  fill: none;
+  stroke: #111111;
+  stroke-width: 3;
 }
 
 .flow-node__label {
   position: absolute;
-  left: 36px;
-  right: 44px;
+  left: 78px;
+  width: 92px;
   top: 50%;
   transform: translateY(-50%);
-  font: 600 16px/1.2 Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font: 600 13px/1.2 Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   color: #111827;
   white-space: nowrap;
   overflow: hidden;
@@ -124,11 +167,11 @@ function onClick(e: MouseEvent) {
 
 .flow-node__badge {
   position: absolute;
-  right: 18px;
+  right: 10px;
   top: 50%;
   transform: translateY(-50%);
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border-radius: 999px;
   display: inline-flex;
   align-items: center;
@@ -136,7 +179,7 @@ function onClick(e: MouseEvent) {
   background: #ffffff;
   border: 1px solid #d9dde3;
   color: #111827;
-  font: 700 14px/1 Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font: 700 12px/1 Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.10);
   pointer-events: none;
 }
