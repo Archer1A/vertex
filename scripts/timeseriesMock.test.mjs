@@ -1,37 +1,5 @@
-import { execFileSync } from 'node:child_process'
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { pathToFileURL } from 'node:url'
-
-const outDir = '/tmp/vertex-timeseries-mock-test'
-mkdirSync(outDir, { recursive: true })
-writeFileSync(`${outDir}/package.json`, '{"type":"module"}\n')
-
-execFileSync(
-  './node_modules/.bin/tsc',
-  [
-    'src/mock/mock.ts',
-    'src/mock/production.ts',
-    'src/mock/types.ts',
-    '--outDir',
-    outDir,
-    '--module',
-    'ES2022',
-    '--target',
-    'ES2022',
-    '--moduleResolution',
-    'Bundler',
-    '--strict',
-    '--skipLibCheck'
-  ],
-  { stdio: 'inherit', cwd: process.cwd() }
-)
-
-const { productionOrderInstances, getObjectTypeById, PRODUCTION_ORDER_OBJECT_TYPE_ID } =
-  await import(pathToFileURL(`${outDir}/mock/mock.js`))
-
-function assert(condition, message) {
-  if (!condition) throw new Error(message)
-}
+import assert from 'node:assert/strict'
+import { productionOrderInstances, getObjectTypeById, PRODUCTION_ORDER_OBJECT_TYPE_ID } from '../src/mock/mock.ts'
 
 const ot = getObjectTypeById(PRODUCTION_ORDER_OBJECT_TYPE_ID)
 assert(ot, 'ProductionOrder ObjectType missing')
