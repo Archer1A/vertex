@@ -3,9 +3,7 @@ import { computed, ref, watch } from 'vue'
 import {
   AlertTriangle,
   ArrowRight,
-  BadgeCheck,
   BarChart3,
-  CalendarDays,
   ChevronRight,
   ClipboardList,
   Factory,
@@ -14,6 +12,7 @@ import {
   Search,
   X
 } from 'lucide-vue-next'
+import MetricsChartWidget from './MetricsChartWidget.vue'
 import type { GraphNodeData } from '../types/graph'
 import {
   DEMAND_TO_MATERIAL_LINK_TYPE_ID,
@@ -25,8 +24,11 @@ import {
   PRODUCTION_ORDER_TO_PLANT_LINK_TYPE_ID,
   PROJECT_LINE_ITEM_OBJECT_TYPE_ID,
   getObjectTypeById,
+  getInstanceMetrics,
+  getMetricsByObjectTypeId,
   linkInstances,
   objectInstances,
+  type ChartMetric,
   type ObjectInstance,
   type ObjectType,
   type PropertyValue,
@@ -67,16 +69,8 @@ type TableRow = {
   cells: Record<string, string>
 }
 
-const NEAR_DUE_DAYS = 14
-
 const tableQuery = ref('')
 const activeTab = ref<TableTabId>('instances')
-
-const today = computed(() => {
-  const date = new Date()
-  date.setHours(0, 0, 0, 0)
-  return date
-})
 
 const isObjectTypeView = computed(() => props.node.nodeKind === 'objectType')
 const isInstanceView = computed(() => props.node.nodeKind === 'objectInstance')
@@ -120,33 +114,6 @@ function getInstanceTitle(instance: ObjectInstance): string {
   const titleProperty = objectType?.properties.find((property) => property.id === objectType.titlePropertyId)
   const title = titleProperty ? getInstancePropertyText(instance, titleProperty) : ''
   return title || instance.id
-}
-
-function parseDate(value: PropertyValue): Date | null {
-  if (!value || typeof value !== 'string') {
-    return null
-  }
-
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return null
-  }
-
-  date.setHours(0, 0, 0, 0)
-  return date
-}
-
-function diffDays(a: Date, b: Date): number {
-  const msPerDay = 1000 * 60 * 60 * 24
-  return Math.round((a.getTime() - b.getTime()) / msPerDay)
-}
-
-function sumNumber(instances: ObjectInstance[], keys: string[]): number {
-  return instances.reduce((acc, instance) => {
-    const raw = keys.map((key) => instance.properties[key]).find((value) => value !== undefined)
-    const value = typeof raw === 'number' ? raw : Number(raw)
-    return acc + (Number.isFinite(value) ? value : 0)
-  }, 0)
 }
 
 function formatNumber(value: number): string {
@@ -268,26 +235,94 @@ const headerSubtitle = computed(() => {
   return props.objectType.displayName
 })
 
-const supportedMetricObjectType = computed(() => {
-  return (
-    props.objectType.id === PROJECT_LINE_ITEM_OBJECT_TYPE_ID ||
-    props.objectType.id === MATERIAL_DEMAND_OBJECT_TYPE_ID ||
-    props.objectType.id === PRODUCTION_ORDER_OBJECT_TYPE_ID
-  )
+type ChartOnlyMetric = Extract<ChartMetric, { type: 'pie' | 'bar' | 'line' }>
+type CardMetric = Extract<ChartMetric, { type: 'card' }>
+
+const objectTypeMetrics = computed(() => getMetricsByObjectTypeId(props.objectType.id))
+
+const chartMetrics = computed<ChartOnlyMetric[]>(() => {
+  if (!isObjectTypeView.value) {
+    return []
+  }
+
+  return objectTypeMetrics.value.filter((metric): metric is ChartOnlyMetric => metric.type !== 'card')
+})
+
+function resolveToneFromColor(color: string | undefined): MetricCardTone | undefined {
+  if (!color) return undefined
+  const normalized = color.toLowerCase()
+  if (normalized === '#ef4444' || normalized === '#dc2626') return 'danger'
+  if (normalized === '#f59e0b' || normalized === '#f97316' || normalized === '#ea580c') return 'warning'
+  if (normalized === '#10b981' || normalized === '#059669') return 'success'
+  if (normalized === '#3b82f6' || normalized === '#2563eb' || normalized === '#1d4ed8') return 'info'
+  return undefined
+}
+
+function cardValueText(value: number | string): string {
+  return typeof value === 'number' ? formatNumber(value) : String(value)
+}
+
+const hasMetricTemplate = computed(() => {
+  if (isObjectTypeView.value) {
+    return objectTypeMetrics.value.length > 0
+  }
+
+  const record = instanceRecord.value
+  if (!record) return false
+  return getInstanceMetrics(record.id).length > 0
 })
 
 const metricCards = computed<MetricCard[]>(() => {
-  if (!supportedMetricObjectType.value) {
+  if (isObjectTypeView.value) {
+    const cards = objectTypeMetrics.value.filter((metric): metric is CardMetric => metric.type === 'card')
+    if (cards.length === 0) {
+      return [
+        {
+          label: 'Prototype',
+          value: 'N/A',
+          helper: 'No metric template yet for this object type.',
+          tone: 'default',
+          icon: Layers
+        }
+      ]
+    }
+
+    return cards.map((card) => ({
+      label: card.title,
+      value: `${cardValueText(card.value)}${card.unit ?? ''}`,
+      helper: 'ObjectType metric',
+      tone: resolveToneFromColor(card.color),
+      icon: BarChart3
+    }))
+  }
+
+  const record = instanceRecord.value
+  if (!record) {
+    return []
+  }
+
+  const cards = getInstanceMetrics(record.id)
+  if (cards.length === 0) {
     return [
       {
         label: 'Prototype',
         value: 'N/A',
-        helper: 'No metric template yet for this object type.',
+        helper: 'No metric template yet for this instance.',
         tone: 'default',
         icon: Layers
       }
     ]
   }
+
+  return cards.map((card) => ({
+    label: card.title,
+    value: `${cardValueText(card.value)}${card.unit ?? ''}`,
+    helper: 'Instance metric',
+    tone: resolveToneFromColor(card.color),
+    icon: BarChart3
+  }))
+
+  /*
 
   if (isObjectTypeView.value) {
     if (props.objectType.id === PROJECT_LINE_ITEM_OBJECT_TYPE_ID) {
@@ -464,6 +499,7 @@ const metricCards = computed<MetricCard[]>(() => {
     ]
   }
 
+  */
   return []
 })
 
@@ -829,11 +865,11 @@ const headerTrail = computed(() => {
             <BarChart3 :size="16" />
             <span>Key metrics</span>
           </div>
-          <div v-if="supportedMetricObjectType" class="metrics-panel__cards-hint">
-            Rule-based v1 · Near-due {{ NEAR_DUE_DAYS }}d
+          <div v-if="hasMetricTemplate" class="metrics-panel__cards-hint">
+            Powered by src/mock/metrics.ts
           </div>
           <div v-else class="metrics-panel__cards-hint">
-            Template pending for this object type
+            Template pending for this selection
           </div>
         </div>
 
@@ -857,6 +893,14 @@ const headerTrail = computed(() => {
             <div class="metrics-card__label" :title="card.label">{{ card.label }}</div>
             <div v-if="card.helper" class="metrics-card__helper" :title="card.helper">{{ card.helper }}</div>
           </div>
+        </div>
+
+        <div v-if="chartMetrics.length" class="metrics-widget-grid" aria-label="Charts">
+          <MetricsChartWidget
+            v-for="metric in chartMetrics"
+            :key="`${metric.type}-${metric.title}`"
+            :metric="metric"
+          />
         </div>
       </section>
 
