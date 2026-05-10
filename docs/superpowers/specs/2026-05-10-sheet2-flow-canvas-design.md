@@ -78,21 +78,19 @@ Algorithm outline:
 2. Assign `x = originX + depth * colWidth`
 3. Assign `y = originY + rowIndex * rowHeight`
 
-### Edges (Optional, Nice-to-have)
+### Edges
 
-Draw simple parent → child connectors using an `svg` overlay:
-- For each visible parent-child pair, render a path/line from parent right edge to child left edge.
-- Styling kept minimal (light gray stroke).
-
-If time is tight, can ship without edges first and add later.
+Do **not** render any parent → child edges/lines in the first version.
 
 ## UI & Styling (Sheet 2 Only)
 
 `FlowNode` style goals (new style system, no impact on Sheet 1):
 - Card-like node with subtle shadow and border
-- Left accent stripe or small colored chip (distinct from Sheet 1)
-- Title (node.name) + optional small subtitle showing `relationObjectType.length`
-- Expand indicator for nodes with children (caret / badge)
+- Use an **SVG polygon node** (a “chevron/hex” shape) as the primary container, based on this reference:
+  - `polygon` with 6 points (left tip → mid → bottom-left → bottom-right → mid-right → top-right)
+  - light fill + dark stroke
+  - centered text showing `node.name`
+- Nodes with children show an expand affordance (e.g. a small badge or caret) but keep it subtle and fully isolated to `.flow-*` styles.
 
 All CSS uses `.flow-*` prefixes and/or `<style scoped>`.
 
@@ -120,4 +118,3 @@ Update:
 - Flow nodes render from `src/mock/flow.ts`
 - Clicking a node with children shows its children to the right
 - Flow node styles are visibly different from Sheet 1 node styles
-
