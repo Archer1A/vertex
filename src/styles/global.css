@@ -176,12 +176,28 @@ button {
 .graph-canvas__grid {
   position: absolute;
   inset: 0;
+  z-index: 1;
   background-image:
     linear-gradient(rgba(148, 163, 184, 0.14) 1px, transparent 1px),
     linear-gradient(90deg, rgba(148, 163, 184, 0.14) 1px, transparent 1px);
   background-size: 28px 28px;
   opacity: 0.86;
+  pointer-events: none;
   mask-image: linear-gradient(90deg, transparent 0, black 18%, black 100%);
+}
+
+.graph-canvas__viewport {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  cursor: grab;
+  touch-action: none;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.graph-canvas--panning .graph-canvas__viewport {
+  cursor: grabbing;
 }
 
 .graph-edges {

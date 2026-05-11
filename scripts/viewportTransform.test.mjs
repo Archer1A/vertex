@@ -25,7 +25,7 @@ execFileSync(
   { stdio: 'inherit' }
 )
 
-const { clampScale, getGraphPercentPosition, zoomViewportAtPoint } = await import(
+const { clampGraphNodePosition, clampScale, getGraphPercentPosition, zoomViewportAtPoint } = await import(
   pathToFileURL(`${outDir}/viewportTransform.js`)
 )
 
@@ -58,5 +58,9 @@ assert.deepEqual(
   }),
   { x: 25, y: 30 }
 )
+
+assert.deepEqual(clampGraphNodePosition({ x: 6, y: 9 }), { x: 8, y: 10 })
+assert.deepEqual(clampGraphNodePosition({ x: 30, y: 40 }), { x: 30, y: 40 })
+assert.deepEqual(clampGraphNodePosition({ x: 99, y: 96 }), { x: 94, y: 90 })
 
 console.log('viewport transform tests passed')

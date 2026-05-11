@@ -18,6 +18,10 @@ export type CanvasRect = {
 
 export const MIN_VIEWPORT_SCALE = 0.45
 export const MAX_VIEWPORT_SCALE = 2.4
+export const GRAPH_NODE_MIN_X = 8
+export const GRAPH_NODE_MAX_X = 94
+export const GRAPH_NODE_MIN_Y = 10
+export const GRAPH_NODE_MAX_Y = 90
 
 export function clampScale(
   value: number,
@@ -64,5 +68,12 @@ export function getGraphPercentPosition({
   return {
     x: (graphX / rect.width) * 100,
     y: (graphY / rect.height) * 100
+  }
+}
+
+export function clampGraphNodePosition(position: ViewportPoint) {
+  return {
+    x: Math.min(GRAPH_NODE_MAX_X, Math.max(GRAPH_NODE_MIN_X, position.x)),
+    y: Math.min(GRAPH_NODE_MAX_Y, Math.max(GRAPH_NODE_MIN_Y, position.y))
   }
 }

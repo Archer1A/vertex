@@ -12,6 +12,12 @@ import type {
 } from '../types/graph'
 import { groupNodesByIds } from '../utils/graphGrouping'
 import {
+  clampGraphNodePosition,
+  getGraphPercentPosition,
+  zoomViewportAtPoint,
+  type ViewportTransform
+} from '../utils/viewportTransform'
+import {
   getLinkTypeById,
   getObjectTypeById,
   getEventBadgeColor,
@@ -55,6 +61,9 @@ const expandedEdgeInstanceIdsByObjectTypeNodeId = new Map<string, Set<string>>()
 const graphNodes = reactive<GraphNodeData[]>([])
 const graphEdges = reactive<GraphEdgeData[]>([])
 
+const DEFAULT_VIEWPORT: ViewportTransform = { x: -32, y: -12, scale: 1.14 }
+const viewport = reactive<ViewportTransform>({ ...DEFAULT_VIEWPORT })
+
 const pinnedPropertyApiNamesByObjectTypeId = reactive<Record<string, string[]>>({})
 
 const DEFAULT_NODE_POSITIONS = [
@@ -91,11 +100,31 @@ const dragState = reactive({
   moved: false
 })
 
+const canvasPanState = reactive({
+  panning: false,
+  pointerId: 0,
+  startX: 0,
+  startY: 0,
+  originX: 0,
+  originY: 0,
+  moved: false
+})
+
+const suppressNextCanvasClick = ref(false)
 const doubleClickState = reactive({ lastNodeId: '', lastAt: 0 })
 
 const panelStyle = computed(() => ({
   left: `${panelPosition.x}px`,
   top: `${panelPosition.y}px`
+}))
+
+const viewportStyle = computed(() => ({
+  transform: `translate3d(${viewport.x}px, ${viewport.y}px, 0) scale(${viewport.scale})`
+}))
+
+const gridStyle = computed(() => ({
+  backgroundPosition: `${viewport.x}px ${viewport.y}px`,
+  backgroundSize: `${28 * viewport.scale}px ${28 * viewport.scale}px`
 }))
 
 const graphStats = computed(() => ({
@@ -803,11 +832,40 @@ function syncObjectTypeEdgesForNode(node: GraphNodeData) {
     })
 }
 
-function handleCanvasClick() {
-  selectedNodeId.value = ''
-  selectedNodeIds.value = []
+function isOverlayEvent(event: Event) {
+  const target = event.target as HTMLElement | null
+
+  return Boolean(
+    target?.closest(
+      [
+        '.selection-panel',
+        '.main-toolbar',
+        '.search-around-panel',
+        '.metrics-workspace',
+        '.right-vertical-panel',
+        '.floating-controls',
+        '.series-button',
+        '.node-context-toolbar',
+        '.node-object-type-menu'
+      ].join(', ')
+    )
+  )
+}
+
+function closeFloatingNodeMenus() {
   nodeTool.open = false
   objectTypeChooser.open = false
+}
+
+function handleCanvasClick(event: MouseEvent) {
+  if (suppressNextCanvasClick.value || isOverlayEvent(event)) {
+    suppressNextCanvasClick.value = false
+    return
+  }
+
+  selectedNodeId.value = ''
+  selectedNodeIds.value = []
+  closeFloatingNodeMenus()
   console.log('canvas clicked')
 }
 
@@ -835,6 +893,111 @@ function handleToolAction(label: string) {
   searchAroundStartNodeId.value = selectedGraphNode.value.id
   searchAroundLinkType.value = null
   isSearchAroundOpen.value = true
+}
+
+function handleCanvasPointerDown(event: PointerEvent) {
+  if (event.button !== 0 || isOverlayEvent(event)) {
+    return
+  }
+
+  event.preventDefault()
+
+  const target = event.currentTarget as HTMLElement
+  target.setPointerCapture(event.pointerId)
+
+  canvasPanState.panning = true
+  canvasPanState.pointerId = event.pointerId
+  canvasPanState.startX = event.clientX
+  canvasPanState.startY = event.clientY
+  canvasPanState.originX = viewport.x
+  canvasPanState.originY = viewport.y
+  canvasPanState.moved = false
+  closeFloatingNodeMenus()
+}
+
+function handleCanvasPointerMove(event: PointerEvent) {
+  if (!canvasPanState.panning || event.pointerId !== canvasPanState.pointerId) {
+    return
+  }
+
+  const deltaX = event.clientX - canvasPanState.startX
+  const deltaY = event.clientY - canvasPanState.startY
+
+  viewport.x = canvasPanState.originX + deltaX
+  viewport.y = canvasPanState.originY + deltaY
+  canvasPanState.moved = Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2
+}
+
+function handleCanvasPointerUp(event: PointerEvent) {
+  if (!canvasPanState.panning || event.pointerId !== canvasPanState.pointerId) {
+    return
+  }
+
+  const target = event.currentTarget as HTMLElement
+
+  if (target.hasPointerCapture(event.pointerId)) {
+    target.releasePointerCapture(event.pointerId)
+  }
+
+  suppressNextCanvasClick.value = canvasPanState.moved
+  canvasPanState.panning = false
+}
+
+function setViewportTransform(nextViewport: ViewportTransform) {
+  viewport.x = nextViewport.x
+  viewport.y = nextViewport.y
+  viewport.scale = nextViewport.scale
+  closeFloatingNodeMenus()
+}
+
+function zoomCanvasAt(point: { x: number; y: number }, factor: number) {
+  setViewportTransform(zoomViewportAtPoint(viewport, viewport.scale * factor, point))
+  console.log('canvas zoom', viewport.scale.toFixed(2))
+}
+
+function handleCanvasWheel(event: WheelEvent) {
+  if (isOverlayEvent(event)) {
+    return
+  }
+
+  const canvas = canvasRef.value
+
+  if (!canvas) {
+    return
+  }
+
+  event.preventDefault()
+
+  const rect = canvas.getBoundingClientRect()
+  const factor = event.deltaY < 0 ? 1.1 : 0.9
+
+  zoomCanvasAt(
+    {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top
+    },
+    factor
+  )
+}
+
+function handleCanvasControl(action: 'fit' | 'zoom-in' | 'zoom-out') {
+  const canvas = canvasRef.value
+
+  if (action === 'fit' || !canvas) {
+    setViewportTransform({ ...DEFAULT_VIEWPORT })
+    console.log('fit canvas')
+    return
+  }
+
+  const rect = canvas.getBoundingClientRect()
+
+  zoomCanvasAt(
+    {
+      x: rect.width / 2,
+      y: rect.height / 2
+    },
+    action === 'zoom-in' ? 1.16 : 0.86
+  )
 }
 
 function groupSelectedNodes() {
@@ -1165,11 +1328,19 @@ function updateNodePosition(clientX: number, clientY: number) {
   }
 
   const rect = canvas.getBoundingClientRect()
-  const nextX = ((clientX - rect.left - dragState.offsetX) / rect.width) * 100
-  const nextY = ((clientY - rect.top - dragState.offsetY) / rect.height) * 100
+  const { x: nextX, y: nextY } = getGraphPercentPosition({
+    clientX,
+    clientY,
+    rect,
+    viewport,
+    offsetX: dragState.offsetX,
+    offsetY: dragState.offsetY
+  })
 
-  node.x = Math.min(93, Math.max(42, nextX))
-  node.y = Math.min(89, Math.max(12, nextY))
+  const nextPosition = clampGraphNodePosition({ x: nextX, y: nextY })
+
+  node.x = nextPosition.x
+  node.y = nextPosition.y
 }
 
 function handleNodePointerDown(event: PointerEvent, nodeId: string) {
@@ -1244,6 +1415,7 @@ function handleNodePointerUp(event: PointerEvent) {
 onBeforeUnmount(() => {
   dragState.dragging = false
   dragState.nodeId = ''
+  canvasPanState.panning = false
 })
 
 function openMetricsPanel(nodeId: string) {
@@ -1284,8 +1456,18 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main ref="canvasRef" class="graph-canvas" @click="handleCanvasClick">
-    <div class="graph-canvas__grid" aria-hidden="true"></div>
+  <main
+    ref="canvasRef"
+    class="graph-canvas"
+    :class="{ 'graph-canvas--panning': canvasPanState.panning }"
+    @click="handleCanvasClick"
+    @pointerdown="handleCanvasPointerDown"
+    @pointermove="handleCanvasPointerMove"
+    @pointerup="handleCanvasPointerUp"
+    @pointercancel="handleCanvasPointerUp"
+    @wheel="handleCanvasWheel"
+  >
+    <div class="graph-canvas__grid" :style="gridStyle" aria-hidden="true"></div>
     <LeftSelectionPanel
       :selected-object="selectedObjectForPanel"
       :pinned-property-api-names="pinnedPropertyApiNamesForPanel"
@@ -1299,12 +1481,16 @@ onBeforeUnmount(() => {
       @apply-instance-filter="handleApplyInstanceFilter"
       @toggle-pinned-property="handleTogglePinnedProperty"
       @click="handlePanelClick"
+      @pointerdown.stop
+      @wheel.stop
     />
     <MainToolbar
       class="graph-canvas__toolbar"
       :can-group="canGroupSelectedNodes"
       @tool-action="handleToolAction"
       @click="handlePanelClick"
+      @pointerdown.stop
+      @wheel.stop
     />
     <SearchAroundPanel
       v-if="isSearchAroundOpen && searchAroundStartNode && searchAroundSelectedObject"
@@ -1315,6 +1501,8 @@ onBeforeUnmount(() => {
       @add-to-graph="handleAddSearchAroundToGraph"
       @close="isSearchAroundOpen = false"
       @click="handlePanelClick"
+      @pointerdown.stop
+      @wheel.stop
     />
     <Transition name="metrics-panel-slide">
       <MetricAIPanel
@@ -1323,58 +1511,64 @@ onBeforeUnmount(() => {
         :object-type="metricsObjectType"
         :filtered-instances="metricsFilteredInstances"
         @close="closeMetricsPanel"
+        @pointerdown.stop
+        @wheel.stop
       />
     </Transition>
     <RightVerticalPanel
       class="graph-canvas__right-panel"
       :search-around-open="isSearchAroundOpen"
       @click="handlePanelClick"
+      @pointerdown.stop
+      @wheel.stop
     />
-    <svg class="graph-edges" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-      <defs>
-        <marker
-          id="graph-edge-arrow"
-          markerWidth="8"
-          markerHeight="8"
-          refX="7"
-          refY="4"
-          orient="auto"
-          markerUnits="strokeWidth"
-        >
-          <path d="M 0 0 L 8 4 L 0 8 z" class="graph-edge__arrow" />
-        </marker>
-      </defs>
-      <g v-for="edge in edgeLines" :key="edge.id">
-        <line
-          :class="['graph-edge', { 'graph-edge--dashed': edge.linkTypeId === 'instanceOf' }]"
-          :x1="edge.x1"
-          :y1="edge.y1"
-          :x2="edge.x2"
-          :y2="edge.y2"
-          marker-end="url(#graph-edge-arrow)"
-          vector-effect="non-scaling-stroke"
-        />
-      </g>
-    </svg>
-    <GraphNode
-      v-for="node in graphNodes"
-      :key="node.id"
-      :label="node.label"
-      :node-kind="node.nodeKind"
-      :node-type="node.type"
-      :display-data="getNodeDisplayData(node)"
-      :style="{ left: `${node.x}%`, top: `${node.y}%` }"
-      :is-selected="selectedNodeIds.includes(node.id)"
-      :is-dragging="dragState.dragging && dragState.nodeId === node.id"
-      :event-count="getNodeEventCount(node)"
-      :event-badge-color="getNodeEventBadgeColor(node)"
-      @pointerdown="handleNodePointerDown($event, node.id)"
-      @pointermove="handleNodePointerMove"
-      @pointerup="handleNodePointerUp"
-      @pointercancel="handleNodePointerUp"
-      @contextmenu="handleNodeContextMenu($event, node.id)"
-      @click.stop
-    />
+    <div class="graph-canvas__viewport" :style="viewportStyle">
+      <svg class="graph-edges" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <marker
+            id="graph-edge-arrow"
+            markerWidth="8"
+            markerHeight="8"
+            refX="7"
+            refY="4"
+            orient="auto"
+            markerUnits="strokeWidth"
+          >
+            <path d="M 0 0 L 8 4 L 0 8 z" class="graph-edge__arrow" />
+          </marker>
+        </defs>
+        <g v-for="edge in edgeLines" :key="edge.id">
+          <line
+            :class="['graph-edge', { 'graph-edge--dashed': edge.linkTypeId === 'instanceOf' }]"
+            :x1="edge.x1"
+            :y1="edge.y1"
+            :x2="edge.x2"
+            :y2="edge.y2"
+            marker-end="url(#graph-edge-arrow)"
+            vector-effect="non-scaling-stroke"
+          />
+        </g>
+      </svg>
+      <GraphNode
+        v-for="node in graphNodes"
+        :key="node.id"
+        :label="node.label"
+        :node-kind="node.nodeKind"
+        :node-type="node.type"
+        :display-data="getNodeDisplayData(node)"
+        :style="{ left: `${node.x}%`, top: `${node.y}%` }"
+        :is-selected="selectedNodeIds.includes(node.id)"
+        :is-dragging="dragState.dragging && dragState.nodeId === node.id"
+        :event-count="getNodeEventCount(node)"
+        :event-badge-color="getNodeEventBadgeColor(node)"
+        @pointerdown="handleNodePointerDown($event, node.id)"
+        @pointermove="handleNodePointerMove"
+        @pointerup="handleNodePointerUp"
+        @pointercancel="handleNodePointerUp"
+        @contextmenu="handleNodeContextMenu($event, node.id)"
+        @click.stop
+      />
+    </div>
     <div
       v-if="nodeTool.open"
       class="node-context-toolbar"
@@ -1409,7 +1603,12 @@ onBeforeUnmount(() => {
         </span>
       </button>
     </div>
-    <FloatingControls @click="handlePanelClick" />
+    <FloatingControls
+      @canvas-control="handleCanvasControl"
+      @click="handlePanelClick"
+      @pointerdown.stop
+      @wheel.stop
+    />
     <button class="series-button" @click.stop="console.log('series')">Series</button>
   </main>
 </template>
